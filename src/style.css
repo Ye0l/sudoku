@@ -153,6 +153,7 @@ body {
 
 .screen.hidden {
   pointer-events: none;
+  display: none;
 }
 
 /* Slide-right (enter from right, exit to left) */
@@ -703,6 +704,9 @@ body {
   pointer-events: none;
 }
 
+/* ============================================================
+   Spinner
+   ============================================================ */
 .spinner {
   width: 44px;
   height: 44px;
