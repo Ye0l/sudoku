@@ -421,8 +421,6 @@ body {
    Game Screen
    ============================================================ */
 #screen-game {
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
