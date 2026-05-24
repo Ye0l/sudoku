@@ -381,18 +381,21 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
   const cages   = game.cages!;
   const isDark  = document.documentElement.getAttribute('data-theme') === 'dark';
 
-  // Muted, desaturated cage palette
   const CAGE_FILLS = isDark
-    ? ['rgba(140,148,225,0.12)','rgba(215,135,170,0.12)','rgba(105,200,140,0.12)','rgba(215,185,100,0.12)','rgba(100,210,195,0.12)','rgba(170,135,225,0.12)']
-    : ['rgba(100,105,185,0.09)','rgba(175,85,135,0.09)','rgba(60,155,95,0.09)','rgba(175,145,55,0.09)','rgba(55,150,140,0.09)','rgba(130,75,185,0.09)'];
+    ? ['rgba(110,125,240,0.17)','rgba(225,100,160,0.17)','rgba(80,215,120,0.17)','rgba(230,195,60,0.17)','rgba(65,220,205,0.17)','rgba(150,105,240,0.17)']
+    : ['rgba(70,80,210,0.14)','rgba(200,50,130,0.14)','rgba(30,175,90,0.14)','rgba(200,165,20,0.14)','rgba(20,170,155,0.14)','rgba(110,45,210,0.14)'];
 
   const CAGE_BORDERS = isDark
-    ? ['rgba(140,148,225,0.25)','rgba(215,135,170,0.25)','rgba(105,200,140,0.25)','rgba(215,185,100,0.25)','rgba(100,210,195,0.25)','rgba(170,135,225,0.25)']
-    : ['rgba(100,105,185,0.20)','rgba(175,85,135,0.20)','rgba(60,155,95,0.20)','rgba(175,145,55,0.20)','rgba(55,150,140,0.20)','rgba(130,75,185,0.20)'];
+    ? ['rgba(110,125,240,0.65)','rgba(225,100,160,0.65)','rgba(80,215,120,0.65)','rgba(230,195,60,0.65)','rgba(65,220,205,0.65)','rgba(150,105,240,0.65)']
+    : ['rgba(70,80,210,0.55)','rgba(200,50,130,0.55)','rgba(30,175,90,0.55)','rgba(200,165,20,0.55)','rgba(20,170,155,0.55)','rgba(110,45,210,0.55)'];
+
+  const CAGE_INNER = isDark
+    ? ['rgba(110,125,240,0.10)','rgba(225,100,160,0.10)','rgba(80,215,120,0.10)','rgba(230,195,60,0.10)','rgba(65,220,205,0.10)','rgba(150,105,240,0.10)']
+    : ['rgba(70,80,210,0.08)','rgba(200,50,130,0.08)','rgba(30,175,90,0.08)','rgba(200,165,20,0.08)','rgba(20,170,155,0.08)','rgba(110,45,210,0.08)'];
 
   const cageById = new Map<number, Cage>(cages.map(c => [c.id, c]));
 
-  // Draw cage fills (full cell, low alpha)
+  // Pass 1: cage fills
   cages.forEach(cage => {
     ctx.fillStyle = CAGE_FILLS[cage.colorIndex];
     cage.cells.forEach(pos => {
@@ -402,14 +405,33 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     });
   });
 
-  // Draw solid cage boundary lines.
-  // Each interior boundary is drawn once from the bottom/right cell's top/left edge.
-  // Board outer edges are drawn from the edge cells.
+  // Pass 2: inner cell separators (same-cage edges) - blurred, very faint
+  ctx.save();
+  ctx.filter = 'blur(1.5px)';
   ctx.setLineDash([]);
   ctx.lineCap = 'butt';
-  ctx.lineWidth = 1.5;
-  const H = 0.75;
+  ctx.lineWidth = 1;
+  for (let pos = 0; pos < 81; pos++) {
+    const b = borders[pos];
+    const cage = cageById.get(b.cageId);
+    if (!cage) continue;
+    const row = (pos / 9) | 0;
+    const col = pos % 9;
+    const x = col * cellSize;
+    const y = row * cellSize;
+    ctx.strokeStyle = CAGE_INNER[cage.colorIndex];
+    ctx.beginPath();
+    if (!b.top && row > 0)  { ctx.moveTo(x, y); ctx.lineTo(x + cellSize, y); }
+    if (!b.left && col > 0) { ctx.moveTo(x, y); ctx.lineTo(x, y + cellSize); }
+    ctx.stroke();
+  }
+  ctx.restore();
 
+  // Pass 3: cage boundary lines - clear, distinct
+  ctx.setLineDash([]);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 2;
+  const H = 1;
   for (let pos = 0; pos < 81; pos++) {
     const b = borders[pos];
     const cage = cageById.get(b.cageId);
