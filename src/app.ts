@@ -7,7 +7,6 @@ import {
   startTimer, stopTimer, formatTime, getElapsed,
 } from './game.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
-import { computeCageBorders, type Cage } from './engine/killer.ts';
 // Worker is loaded via Vite's ?worker suffix at runtime
 const createPuzzleWorker = (): Worker =>
   new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' });
@@ -49,6 +48,7 @@ const el = {
   boardGrid:     document.getElementById('board-grid')!,
   boardContainer:document.getElementById('board-container')!,
   cageCanvas:    document.getElementById('cage-canvas') as HTMLCanvasElement,
+  cageLineCanvas:document.getElementById('cage-line-canvas') as HTMLCanvasElement,
   loadingOverlay:document.getElementById('loading-overlay')!,
   completeOverlay:document.getElementById('complete-overlay')!,
   completeTime:  document.getElementById('complete-time')!,
@@ -77,6 +77,7 @@ const el = {
 };
 
 const undoStack: { cells: CellState[] }[] = [];
+let settingsReturnScreen: Exclude<Screen, 'settings'> = 'menu';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
@@ -117,11 +118,24 @@ function navigate(to: Screen, direction: 'forward' | 'back' | 'fade' = 'forward'
 function onScreenEnter(screen: Screen): void {
   if (screen === 'menu') {
     renderMenuResumeCard();
+  } else if (screen === 'game' && state.game) {
+    renderBoard(state.game);
   } else if (screen === 'history') {
     renderHistory();
   } else if (screen === 'settings') {
     syncSettingsUI();
   }
+}
+
+function openSettings(): void {
+  if (state.screen !== 'settings') {
+    settingsReturnScreen = state.screen;
+  }
+  navigate('settings', 'fade');
+}
+
+function closeSettings(): void {
+  navigate(settingsReturnScreen, settingsReturnScreen === 'game' ? 'fade' : 'back');
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -278,8 +292,6 @@ function beginTimer(): void {
 
 // ── Board rendering ───────────────────────────────────────────────────────────
 
-let cageBordersCache: ReturnType<typeof computeCageBorders> | null = null;
-
 function isLandscape(): boolean {
   return window.innerWidth > window.innerHeight && window.innerWidth >= 600;
 }
@@ -331,7 +343,6 @@ function renderBoard(game: GameState): void {
   // Build cells
   grid.innerHTML = '';
   el.cells = [];
-  cageBordersCache = game.cages ? computeCageBorders(game.cages) : null;
 
   for (let i = 0; i < 81; i++) {
     const cellEl = document.createElement('div');
@@ -356,6 +367,7 @@ function renderBoard(game: GameState): void {
     setupCageCanvas(game, boardPx, cellSize);
   } else {
     el.cageCanvas.style.display = 'none';
+    el.cageLineCanvas.style.display = 'none';
     document.querySelectorAll('.cage-sum-label').forEach(e => e.remove());
   }
 
@@ -366,24 +378,31 @@ function renderBoard(game: GameState): void {
 
 function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): void {
   const canvas = el.cageCanvas;
-  const canvasPad = Math.ceil(Math.max(6, cellSize * 0.14));
+  const lineCanvas = el.cageLineCanvas;
+  const canvasPad = 0;
   const canvasPx = boardPx + canvasPad * 2;
-  canvas.style.display = 'block';
-  canvas.width  = canvasPx;
-  canvas.height = canvasPx;
-  canvas.style.left = -canvasPad + 'px';
-  canvas.style.top = -canvasPad + 'px';
-  canvas.style.right = 'auto';
-  canvas.style.bottom = 'auto';
-  canvas.style.width  = canvasPx + 'px';
-  canvas.style.height = canvasPx + 'px';
+  const dpr = window.devicePixelRatio || 1;
+  [canvas, lineCanvas].forEach(c => {
+    c.style.display = 'block';
+    c.width  = Math.round(canvasPx * dpr);
+    c.height = Math.round(canvasPx * dpr);
+    c.style.left = -canvasPad + 'px';
+    c.style.top = -canvasPad + 'px';
+    c.style.right = 'auto';
+    c.style.bottom = 'auto';
+    c.style.width  = canvasPx + 'px';
+    c.style.height = canvasPx + 'px';
+  });
 
   document.querySelectorAll('.cage-sum-label').forEach(e => e.remove());
 
   const ctx = canvas.getContext('2d')!;
+  const lineCtx = lineCanvas.getContext('2d')!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  lineCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, canvasPx, canvasPx);
+  lineCtx.clearRect(0, 0, canvasPx, canvasPx);
 
-  const borders = cageBordersCache!;
   const cages   = game.cages!;
   const isDark  = document.documentElement.getAttribute('data-theme') === 'dark';
 
@@ -391,12 +410,10 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     ? ['oklch(74% 0.15 275 / 0.12)','oklch(74% 0.17 350 / 0.12)','oklch(78% 0.16 145 / 0.12)','oklch(82% 0.14 85 / 0.12)','oklch(78% 0.12 190 / 0.12)','oklch(74% 0.16 305 / 0.12)']
     : ['oklch(58% 0.20 275 / 0.16)','oklch(62% 0.22 350 / 0.16)','oklch(70% 0.18 145 / 0.16)','oklch(78% 0.16 85 / 0.16)','oklch(72% 0.14 190 / 0.16)','oklch(63% 0.20 305 / 0.16)'];
 
-  const CAGE_SHADOWS = isDark
-    ? ['oklch(74% 0.15 275 / 0.10)','oklch(74% 0.17 350 / 0.10)','oklch(78% 0.16 145 / 0.10)','oklch(82% 0.14 85 / 0.10)','oklch(78% 0.12 190 / 0.10)','oklch(74% 0.16 305 / 0.10)']
-    : ['oklch(58% 0.20 275 / 0.12)','oklch(62% 0.22 350 / 0.12)','oklch(70% 0.18 145 / 0.12)','oklch(78% 0.16 85 / 0.12)','oklch(72% 0.14 190 / 0.12)','oklch(63% 0.20 305 / 0.12)'];
-
-  const CAGE_BORDER = isDark ? 'oklch(94% 0.02 275 / 0.24)' : 'oklch(22% 0.02 275 / 0.18)';
-  const BOX_BORDER = isDark ? 'oklch(96% 0.01 275 / 0.44)' : 'oklch(18% 0.01 275 / 0.38)';
+  const CAGE_BORDERS = isDark
+    ? ['oklch(74% 0.15 275 / 0.68)','oklch(74% 0.17 350 / 0.68)','oklch(78% 0.16 145 / 0.68)','oklch(82% 0.14 85 / 0.68)','oklch(78% 0.12 190 / 0.68)','oklch(74% 0.16 305 / 0.68)']
+    : ['oklch(58% 0.20 275 / 0.62)','oklch(62% 0.22 350 / 0.62)','oklch(70% 0.18 145 / 0.62)','oklch(78% 0.16 85 / 0.68)','oklch(72% 0.14 190 / 0.62)','oklch(63% 0.20 305 / 0.62)'];
+  const BOX_GRID = isDark ? 'oklch(96% 0.01 275 / 0.28)' : 'oklch(18% 0.01 275 / 0.22)';
 
   // Pass 1: cage fills
   cages.forEach(cage => {
@@ -408,108 +425,223 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     });
   });
 
-  const addCellBoundaryPath = (pos: number, includeSharedEdges: boolean): void => {
-    const b = borders[pos];
-    const row = (pos / 9) | 0;
-    const col = pos % 9;
-    const x = canvasPad + col * cellSize;
-    const y = canvasPad + row * cellSize;
+  const cageInset = Math.max(4, Math.round(cellSize * 0.1));
+  const labelFontSize = Math.max(9, Math.round(cellSize * 0.21));
+  const labelFontFamily = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
+  const labelFont = `700 ${labelFontSize}px ${labelFontFamily}`;
+  const labelClearPadX = Math.max(2, Math.round(cellSize * 0.055));
+  const labelClearPadY = Math.max(2, Math.round(cellSize * 0.045));
+  const labelRadius = Math.max(3, Math.round(cellSize * 0.07));
 
-    if (b.top)                       { ctx.moveTo(x, y);            ctx.lineTo(x + cellSize, y); }
-    if (b.left)                      { ctx.moveTo(x, y);            ctx.lineTo(x, y + cellSize); }
-    if (b.bottom && (includeSharedEdges || row === 8)) {
-      ctx.moveTo(x, y + cellSize);   ctx.lineTo(x + cellSize, y + cellSize);
-    }
-    if (b.right && (includeSharedEdges || col === 8)) {
-      ctx.moveTo(x + cellSize, y);   ctx.lineTo(x + cellSize, y + cellSize);
-    }
-  };
-
-  const clipToCage = (cage: Cage): void => {
-    ctx.beginPath();
-    cage.cells.forEach(pos => {
-      const row = (pos / 9) | 0;
-      const col = pos % 9;
-      ctx.rect(canvasPad + col * cellSize, canvasPad + row * cellSize, cellSize, cellSize);
-    });
-    ctx.clip();
-  };
-
-  const strokeInnerShadow = (): void => {
-    ctx.setLineDash([]);
-    ctx.lineCap = 'butt';
-    ctx.lineJoin = 'miter';
-    ctx.lineWidth = Math.max(3, cellSize * 0.06);
-
-    cages.forEach(cage => {
-      const color = CAGE_SHADOWS[cage.colorIndex];
-      ctx.save();
-      clipToCage(cage);
-      ctx.strokeStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = Math.max(2, cellSize * 0.055);
-      ctx.beginPath();
-      cage.cells.forEach(pos => addCellBoundaryPath(pos, true));
-      ctx.stroke();
-      ctx.restore();
-    });
-  };
-
-  const strokeSingleBorder = (): void => {
-    ctx.setLineDash([]);
-    ctx.lineCap = 'butt';
-    ctx.lineJoin = 'miter';
-    ctx.lineWidth = Math.max(1.25, cellSize * 0.026);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = CAGE_BORDER;
-    ctx.beginPath();
-    for (let pos = 0; pos < 81; pos++) addCellBoundaryPath(pos, false);
-    ctx.stroke();
-  };
-
-  const strokeBoxGrid = (): void => {
-    ctx.setLineDash([]);
-    ctx.lineCap = 'butt';
-    ctx.lineJoin = 'miter';
-    ctx.lineWidth = Math.max(2, cellSize * 0.035);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = BOX_BORDER;
-    ctx.beginPath();
-    [3, 6].forEach(n => {
-      const p = canvasPad + n * cellSize;
-      ctx.moveTo(p, canvasPad);
-      ctx.lineTo(p, canvasPad + boardPx);
-      ctx.moveTo(canvasPad, p);
-      ctx.lineTo(canvasPad + boardPx, p);
-    });
-    ctx.stroke();
-  };
-
-  // Pass 2: clipped inner shadow, then one non-overlapping cage border.
-  strokeInnerShadow();
-  strokeSingleBorder();
-  strokeBoxGrid();
-
-  ctx.shadowBlur = 0;
-  ctx.shadowColor = 'transparent';
-  cages.forEach(cage => {
+  const getLabelCell = (cage: { cells: number[] }): number => {
     let labelCell = cage.cells[0];
     for (const pos of cage.cells) {
       const labelRow = (labelCell / 9) | 0;
       const row = (pos / 9) | 0;
-      if (row < labelRow || (row === labelRow && pos % 9 > labelCell % 9)) labelCell = pos;
+      if (row < labelRow || (row === labelRow && pos % 9 < labelCell % 9)) labelCell = pos;
     }
+    return labelCell;
+  };
 
+  type GridPoint = { row: number; col: number };
+  type BoundaryEdge = { start: GridPoint; end: GridPoint; dir: number; key: string };
+
+  const pointKey = (p: GridPoint): string => `${p.row},${p.col}`;
+  const edgeKey = (start: GridPoint, end: GridPoint): string =>
+    `${start.row},${start.col}->${end.row},${end.col}`;
+
+  const makeEdge = (start: GridPoint, end: GridPoint): BoundaryEdge => {
+    const dc = end.col - start.col;
+    const dr = end.row - start.row;
+    const dir = dc === 1 ? 0 : dr === 1 ? 1 : dc === -1 ? 2 : 3;
+    return { start, end, dir, key: edgeKey(start, end) };
+  };
+
+  const traceBoundaryLoops = (cellSet: Set<number>): BoundaryEdge[][] => {
+    const edges: BoundaryEdge[] = [];
+    cellSet.forEach(pos => {
+      const row = (pos / 9) | 0;
+      const col = pos % 9;
+      if (row === 0 || !cellSet.has(pos - 9)) edges.push(makeEdge({ row, col }, { row, col: col + 1 }));
+      if (col === 8 || !cellSet.has(pos + 1)) edges.push(makeEdge({ row, col: col + 1 }, { row: row + 1, col: col + 1 }));
+      if (row === 8 || !cellSet.has(pos + 9)) edges.push(makeEdge({ row: row + 1, col: col + 1 }, { row: row + 1, col }));
+      if (col === 0 || !cellSet.has(pos - 1)) edges.push(makeEdge({ row: row + 1, col }, { row, col }));
+    });
+
+    const byStart = new Map<string, BoundaryEdge[]>();
+    edges.forEach(edge => {
+      const key = pointKey(edge.start);
+      byStart.set(key, [...(byStart.get(key) ?? []), edge]);
+    });
+
+    const used = new Set<string>();
+    const loops: BoundaryEdge[][] = [];
+    const turnPreference = [1, 0, 3, 2];
+
+    edges.forEach(first => {
+      if (used.has(first.key)) return;
+
+      const loop: BoundaryEdge[] = [];
+      let current = first;
+      while (!used.has(current.key)) {
+        used.add(current.key);
+        loop.push(current);
+
+        const candidates = (byStart.get(pointKey(current.end)) ?? [])
+          .filter(edge => !used.has(edge.key))
+          .sort((a, b) => {
+            const turnA = (a.dir - current.dir + 4) % 4;
+            const turnB = (b.dir - current.dir + 4) % 4;
+            return turnPreference.indexOf(turnA) - turnPreference.indexOf(turnB);
+          });
+
+        if (candidates.length === 0) break;
+        current = candidates[0];
+      }
+
+      if (loop.length > 0) loops.push(loop);
+    });
+
+    return loops;
+  };
+
+  const insetPoint = (prev: GridPoint, point: GridPoint, next: GridPoint): [number, number] => {
+    const inDx = Math.sign(point.col - prev.col);
+    const inDy = Math.sign(point.row - prev.row);
+    const outDx = Math.sign(next.col - point.col);
+    const outDy = Math.sign(next.row - point.row);
+    const inNormal = { x: -inDy, y: inDx };
+    const outNormal = { x: -outDy, y: outDx };
+    const xOffset = (inNormal.x !== 0 ? inNormal.x : outNormal.x) * cageInset;
+    const yOffset = (inNormal.y !== 0 ? inNormal.y : outNormal.y) * cageInset;
+    return [
+      canvasPad + point.col * cellSize + xOffset,
+      canvasPad + point.row * cellSize + yOffset,
+    ];
+  };
+
+  const simplifyLoopVertices = (vertices: GridPoint[]): GridPoint[] => {
+    return vertices.filter((point, i) => {
+      const prev = vertices[(i - 1 + vertices.length) % vertices.length];
+      const next = vertices[(i + 1) % vertices.length];
+      const sameRow = prev.row === point.row && point.row === next.row;
+      const sameCol = prev.col === point.col && point.col === next.col;
+      return !sameRow && !sameCol;
+    });
+  };
+
+  const strokeCageOutline = (cellSet: Set<number>): void => {
+    const cornerDots: [number, number][] = [];
+    lineCtx.beginPath();
+    traceBoundaryLoops(cellSet).forEach(loop => {
+      const vertices = simplifyLoopVertices(loop.map(edge => edge.start));
+      if (vertices.length < 2) return;
+      vertices.forEach((point, i) => {
+        const prev = vertices[(i - 1 + vertices.length) % vertices.length];
+        const next = vertices[(i + 1) % vertices.length];
+        const [x, y] = insetPoint(prev, point, next);
+        cornerDots.push([x, y]);
+        if (i === 0) lineCtx.moveTo(x, y);
+        else lineCtx.lineTo(x, y);
+      });
+      lineCtx.closePath();
+    });
+    lineCtx.stroke();
+
+    lineCtx.save();
+    lineCtx.setLineDash([]);
+    cornerDots.forEach(([x, y]) => {
+      lineCtx.beginPath();
+      lineCtx.arc(x, y, lineCtx.lineWidth * 0.55, 0, Math.PI * 2);
+      lineCtx.fill();
+    });
+    lineCtx.restore();
+  };
+
+  const labelBounds = (sum: number, labelCell: number): { x: number; y: number; w: number; h: number } => {
     const row = (labelCell / 9) | 0;
     const col = labelCell % 9;
+    const labelX = col * cellSize + cageInset + 1;
+    const labelY = row * cellSize + cageInset - 4;
+    lineCtx.font = labelFont;
+    const textWidth = Math.ceil(lineCtx.measureText(String(sum)).width);
+    return {
+      x: labelX - labelClearPadX,
+      y: labelY - labelClearPadY,
+      w: textWidth + labelClearPadX * 2,
+      h: labelFontSize + labelClearPadY * 2,
+    };
+  };
+
+  const roundedRect = (x: number, y: number, w: number, h: number, r: number): void => {
+    const radius = Math.min(r, w / 2, h / 2);
+    lineCtx.moveTo(x + radius, y);
+    lineCtx.lineTo(x + w - radius, y);
+    lineCtx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    lineCtx.lineTo(x + w, y + h - radius);
+    lineCtx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    lineCtx.lineTo(x + radius, y + h);
+    lineCtx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    lineCtx.lineTo(x, y + radius);
+    lineCtx.quadraticCurveTo(x, y, x + radius, y);
+  };
+
+  const strokeBoxGrid = (): void => {
+    lineCtx.save();
+    lineCtx.setLineDash([]);
+    lineCtx.lineCap = 'butt';
+    lineCtx.lineJoin = 'miter';
+    lineCtx.lineWidth = Math.max(1.25, cellSize * 0.026);
+    lineCtx.strokeStyle = BOX_GRID;
+    lineCtx.beginPath();
+    [3, 6].forEach(n => {
+      const p = canvasPad + n * cellSize;
+      lineCtx.moveTo(p, canvasPad);
+      lineCtx.lineTo(p, canvasPad + boardPx);
+      lineCtx.moveTo(canvasPad, p);
+      lineCtx.lineTo(canvasPad + boardPx, p);
+    });
+    lineCtx.stroke();
+    lineCtx.restore();
+  };
+
+  // Pass 2: dotted cage borders on a dedicated overlay above the base Sudoku grid.
+  lineCtx.lineCap = 'round';
+  lineCtx.lineJoin = 'round';
+  lineCtx.lineWidth = Math.max(1.5, cellSize * 0.035);
+  lineCtx.setLineDash([Math.max(1.5, cellSize * 0.055), Math.max(3, cellSize * 0.07)]);
+  lineCtx.shadowBlur = 0;
+  lineCtx.shadowColor = 'transparent';
+  strokeBoxGrid();
+
+  cages.forEach(cage => {
+    lineCtx.strokeStyle = CAGE_BORDERS[cage.colorIndex];
+    lineCtx.fillStyle = CAGE_BORDERS[cage.colorIndex];
+    strokeCageOutline(new Set(cage.cells));
+  });
+
+  lineCtx.save();
+  lineCtx.globalCompositeOperation = 'destination-out';
+  lineCtx.beginPath();
+  cages.forEach(cage => {
+    const labelCell = getLabelCell(cage);
+    const { x, y, w, h } = labelBounds(cage.sum, labelCell);
+    roundedRect(x, y, w, h, labelRadius);
+  });
+  lineCtx.fill();
+  lineCtx.restore();
+
+  cages.forEach(cage => {
+    const labelCell = getLabelCell(cage);
+    const row = (labelCell / 9) | 0;
+    const col = labelCell % 9;
+    const x = col * cellSize;
+    const y = row * cellSize;
     const label = document.createElement('div');
     label.className = 'cage-sum-label';
     label.textContent = String(cage.sum);
-    label.style.left = ((col + 1) * cellSize - 3) + 'px';
-    label.style.top  = (row * cellSize + 3) + 'px';
-    label.style.transform = 'translateX(-100%)';
+    label.style.left = (x + cageInset + 1) + 'px';
+    label.style.top  = (y + cageInset - 4) + 'px';
     el.boardContainer.appendChild(label);
   });
 }
@@ -819,15 +951,15 @@ export function init(): void {
 
   // Screen navigation buttons
   document.getElementById('nav-to-history')?.addEventListener('click', () => navigate('history'));
-  document.getElementById('nav-to-settings')?.addEventListener('click', () => navigate('settings', 'fade'));
+  document.getElementById('nav-to-settings')?.addEventListener('click', openSettings);
   document.getElementById('back-from-history')?.addEventListener('click', () => navigate('menu', 'back'));
-  document.getElementById('back-from-settings')?.addEventListener('click', () => navigate('menu', 'back'));
+  document.getElementById('back-from-settings')?.addEventListener('click', closeSettings);
   document.getElementById('back-from-game')?.addEventListener('click', () => {
     stopTimer();
     if (state.game) autoSave(state.game);
     navigate('menu', 'back');
   });
-  document.getElementById('game-settings-btn')?.addEventListener('click', () => navigate('settings', 'fade'));
+  document.getElementById('game-settings-btn')?.addEventListener('click', openSettings);
 
   // Menu
   el.typeClassic.addEventListener('click', () => selectType('classic'));
