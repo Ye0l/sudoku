@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages repo
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-sudoku
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out sudoku
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Check out GitHub Pages repo
+        uses: actions/checkout@v4
+        with:
+          repository: Ye0l/Ye0l.github.io
+          token: ${{ secrets.PAGES_REPO_TOKEN }}
+          path: pages-repo
+
+      - name: Copy build output
+        run: |
+          rm -rf pages-repo/docs/sudoku
+          mkdir -p pages-repo/docs/sudoku
+          cp -R dist/. pages-repo/docs/sudoku/
+
+      - name: Commit and push
+        working-directory: pages-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/sudoku
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+            exit 0
+          fi
+          git commit -m "Deploy sudoku from Ye0l/sudoku@${GITHUB_SHA}"
+          git push origin main
