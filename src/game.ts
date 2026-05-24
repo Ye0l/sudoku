@@ -3,7 +3,7 @@
 import type { GameState, CellState, GameType, Difficulty, HistoryRecord } from './types.ts';
 import { saveGame, addHistory } from './storage.ts';
 import type { Cage } from './engine/killer.ts';
-import { getPeers, getBoxIndex } from './engine/sudoku.ts';
+import { getBoxIndex } from './engine/sudoku.ts';
 
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -87,15 +87,7 @@ export function setCellValue(game: GameState, pos: number, value: number): GameS
     return { ...c, value, memos: [], error: false };
   });
 
-  // Clear memos in peers when placing a value
-  const peers = getPeers(pos);
-  const updatedCells = cells.map((c, i) => {
-    if (!peers.includes(i)) return c;
-    const newMemos = c.memos.filter(m => m !== value);
-    return newMemos.length !== c.memos.length ? { ...c, memos: newMemos } : c;
-  });
-
-  return validateAndCheck({ ...game, cells: updatedCells });
+  return validateAndCheck({ ...game, cells });
 }
 
 export function eraseCellValue(game: GameState, pos: number): GameState {

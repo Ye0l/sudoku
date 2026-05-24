@@ -366,34 +366,37 @@ function renderBoard(game: GameState): void {
 
 function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): void {
   const canvas = el.cageCanvas;
+  const canvasPad = Math.ceil(Math.max(6, cellSize * 0.14));
+  const canvasPx = boardPx + canvasPad * 2;
   canvas.style.display = 'block';
-  canvas.width  = boardPx;
-  canvas.height = boardPx;
-  canvas.style.width  = boardPx + 'px';
-  canvas.style.height = boardPx + 'px';
+  canvas.width  = canvasPx;
+  canvas.height = canvasPx;
+  canvas.style.left = -canvasPad + 'px';
+  canvas.style.top = -canvasPad + 'px';
+  canvas.style.right = 'auto';
+  canvas.style.bottom = 'auto';
+  canvas.style.width  = canvasPx + 'px';
+  canvas.style.height = canvasPx + 'px';
 
   document.querySelectorAll('.cage-sum-label').forEach(e => e.remove());
 
   const ctx = canvas.getContext('2d')!;
-  ctx.clearRect(0, 0, boardPx, boardPx);
+  ctx.clearRect(0, 0, canvasPx, canvasPx);
 
   const borders = cageBordersCache!;
   const cages   = game.cages!;
   const isDark  = document.documentElement.getAttribute('data-theme') === 'dark';
 
   const CAGE_FILLS = isDark
-    ? ['rgba(110,125,240,0.17)','rgba(225,100,160,0.17)','rgba(80,215,120,0.17)','rgba(230,195,60,0.17)','rgba(65,220,205,0.17)','rgba(150,105,240,0.17)']
-    : ['rgba(70,80,210,0.14)','rgba(200,50,130,0.14)','rgba(30,175,90,0.14)','rgba(200,165,20,0.14)','rgba(20,170,155,0.14)','rgba(110,45,210,0.14)'];
+    ? ['oklch(74% 0.15 275 / 0.12)','oklch(74% 0.17 350 / 0.12)','oklch(78% 0.16 145 / 0.12)','oklch(82% 0.14 85 / 0.12)','oklch(78% 0.12 190 / 0.12)','oklch(74% 0.16 305 / 0.12)']
+    : ['oklch(58% 0.20 275 / 0.16)','oklch(62% 0.22 350 / 0.16)','oklch(70% 0.18 145 / 0.16)','oklch(78% 0.16 85 / 0.16)','oklch(72% 0.14 190 / 0.16)','oklch(63% 0.20 305 / 0.16)'];
 
-  const CAGE_BORDERS = isDark
-    ? ['rgba(110,125,240,0.65)','rgba(225,100,160,0.65)','rgba(80,215,120,0.65)','rgba(230,195,60,0.65)','rgba(65,220,205,0.65)','rgba(150,105,240,0.65)']
-    : ['rgba(70,80,210,0.55)','rgba(200,50,130,0.55)','rgba(30,175,90,0.55)','rgba(200,165,20,0.55)','rgba(20,170,155,0.55)','rgba(110,45,210,0.55)'];
+  const CAGE_SHADOWS = isDark
+    ? ['oklch(74% 0.15 275 / 0.10)','oklch(74% 0.17 350 / 0.10)','oklch(78% 0.16 145 / 0.10)','oklch(82% 0.14 85 / 0.10)','oklch(78% 0.12 190 / 0.10)','oklch(74% 0.16 305 / 0.10)']
+    : ['oklch(58% 0.20 275 / 0.12)','oklch(62% 0.22 350 / 0.12)','oklch(70% 0.18 145 / 0.12)','oklch(78% 0.16 85 / 0.12)','oklch(72% 0.14 190 / 0.12)','oklch(63% 0.20 305 / 0.12)'];
 
-  const CAGE_INNER = isDark
-    ? ['rgba(110,125,240,0.10)','rgba(225,100,160,0.10)','rgba(80,215,120,0.10)','rgba(230,195,60,0.10)','rgba(65,220,205,0.10)','rgba(150,105,240,0.10)']
-    : ['rgba(70,80,210,0.08)','rgba(200,50,130,0.08)','rgba(30,175,90,0.08)','rgba(200,165,20,0.08)','rgba(20,170,155,0.08)','rgba(110,45,210,0.08)'];
-
-  const cageById = new Map<number, Cage>(cages.map(c => [c.id, c]));
+  const CAGE_BORDER = isDark ? 'oklch(94% 0.02 275 / 0.24)' : 'oklch(22% 0.02 275 / 0.18)';
+  const BOX_BORDER = isDark ? 'oklch(96% 0.01 275 / 0.44)' : 'oklch(18% 0.01 275 / 0.38)';
 
   // Pass 1: cage fills
   cages.forEach(cage => {
@@ -401,66 +404,114 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     cage.cells.forEach(pos => {
       const r = (pos / 9) | 0;
       const c = pos % 9;
-      ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+      ctx.fillRect(canvasPad + c * cellSize, canvasPad + r * cellSize, cellSize, cellSize);
     });
   });
 
-  // Pass 2: inner cell separators (same-cage edges) - blurred, very faint
-  ctx.save();
-  ctx.filter = 'blur(1.5px)';
-  ctx.setLineDash([]);
-  ctx.lineCap = 'butt';
-  ctx.lineWidth = 1;
-  for (let pos = 0; pos < 81; pos++) {
+  const addCellBoundaryPath = (pos: number, includeSharedEdges: boolean): void => {
     const b = borders[pos];
-    const cage = cageById.get(b.cageId);
-    if (!cage) continue;
     const row = (pos / 9) | 0;
     const col = pos % 9;
-    const x = col * cellSize;
-    const y = row * cellSize;
-    ctx.strokeStyle = CAGE_INNER[cage.colorIndex];
-    ctx.beginPath();
-    if (!b.top && row > 0)  { ctx.moveTo(x, y); ctx.lineTo(x + cellSize, y); }
-    if (!b.left && col > 0) { ctx.moveTo(x, y); ctx.lineTo(x, y + cellSize); }
-    ctx.stroke();
-  }
-  ctx.restore();
+    const x = canvasPad + col * cellSize;
+    const y = canvasPad + row * cellSize;
 
-  // Pass 3: cage boundary lines - clear, distinct
-  ctx.setLineDash([]);
-  ctx.lineCap = 'butt';
-  ctx.lineWidth = 2;
-  const H = 1;
-  for (let pos = 0; pos < 81; pos++) {
-    const b = borders[pos];
-    const cage = cageById.get(b.cageId);
-    if (!cage) continue;
-
-    const row = (pos / 9) | 0;
-    const col = pos % 9;
-    const x = col * cellSize;
-    const y = row * cellSize;
-
-    ctx.strokeStyle = CAGE_BORDERS[cage.colorIndex];
-    ctx.beginPath();
-
-    if (b.top)                 { ctx.moveTo(x, y + H);            ctx.lineTo(x + cellSize, y + H); }
-    if (b.left)                { ctx.moveTo(x + H, y);            ctx.lineTo(x + H, y + cellSize); }
-    if (b.bottom && row === 8) { ctx.moveTo(x, y + cellSize - H); ctx.lineTo(x + cellSize, y + cellSize - H); }
-    if (b.right  && col === 8) { ctx.moveTo(x + cellSize - H, y); ctx.lineTo(x + cellSize - H, y + cellSize); }
-
-    ctx.stroke();
-
-    if (b.isTopLeft) {
-      const label = document.createElement('div');
-      label.className = 'cage-sum-label';
-      label.textContent = String(cage.sum);
-      label.style.left = (x + 3) + 'px';
-      label.style.top  = (y + 3) + 'px';
-      el.boardContainer.appendChild(label);
+    if (b.top)                       { ctx.moveTo(x, y);            ctx.lineTo(x + cellSize, y); }
+    if (b.left)                      { ctx.moveTo(x, y);            ctx.lineTo(x, y + cellSize); }
+    if (b.bottom && (includeSharedEdges || row === 8)) {
+      ctx.moveTo(x, y + cellSize);   ctx.lineTo(x + cellSize, y + cellSize);
     }
-  }
+    if (b.right && (includeSharedEdges || col === 8)) {
+      ctx.moveTo(x + cellSize, y);   ctx.lineTo(x + cellSize, y + cellSize);
+    }
+  };
+
+  const clipToCage = (cage: Cage): void => {
+    ctx.beginPath();
+    cage.cells.forEach(pos => {
+      const row = (pos / 9) | 0;
+      const col = pos % 9;
+      ctx.rect(canvasPad + col * cellSize, canvasPad + row * cellSize, cellSize, cellSize);
+    });
+    ctx.clip();
+  };
+
+  const strokeInnerShadow = (): void => {
+    ctx.setLineDash([]);
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.lineWidth = Math.max(3, cellSize * 0.06);
+
+    cages.forEach(cage => {
+      const color = CAGE_SHADOWS[cage.colorIndex];
+      ctx.save();
+      clipToCage(cage);
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = Math.max(2, cellSize * 0.055);
+      ctx.beginPath();
+      cage.cells.forEach(pos => addCellBoundaryPath(pos, true));
+      ctx.stroke();
+      ctx.restore();
+    });
+  };
+
+  const strokeSingleBorder = (): void => {
+    ctx.setLineDash([]);
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.lineWidth = Math.max(1.25, cellSize * 0.026);
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = CAGE_BORDER;
+    ctx.beginPath();
+    for (let pos = 0; pos < 81; pos++) addCellBoundaryPath(pos, false);
+    ctx.stroke();
+  };
+
+  const strokeBoxGrid = (): void => {
+    ctx.setLineDash([]);
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.lineWidth = Math.max(2, cellSize * 0.035);
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = BOX_BORDER;
+    ctx.beginPath();
+    [3, 6].forEach(n => {
+      const p = canvasPad + n * cellSize;
+      ctx.moveTo(p, canvasPad);
+      ctx.lineTo(p, canvasPad + boardPx);
+      ctx.moveTo(canvasPad, p);
+      ctx.lineTo(canvasPad + boardPx, p);
+    });
+    ctx.stroke();
+  };
+
+  // Pass 2: clipped inner shadow, then one non-overlapping cage border.
+  strokeInnerShadow();
+  strokeSingleBorder();
+  strokeBoxGrid();
+
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  cages.forEach(cage => {
+    let labelCell = cage.cells[0];
+    for (const pos of cage.cells) {
+      const labelRow = (labelCell / 9) | 0;
+      const row = (pos / 9) | 0;
+      if (row < labelRow || (row === labelRow && pos % 9 > labelCell % 9)) labelCell = pos;
+    }
+
+    const row = (labelCell / 9) | 0;
+    const col = labelCell % 9;
+    const label = document.createElement('div');
+    label.className = 'cage-sum-label';
+    label.textContent = String(cage.sum);
+    label.style.left = ((col + 1) * cellSize - 3) + 'px';
+    label.style.top  = (row * cellSize + 3) + 'px';
+    label.style.transform = 'translateX(-100%)';
+    el.boardContainer.appendChild(label);
+  });
 }
 
 function renderAllCells(game: GameState): void {
@@ -635,6 +686,7 @@ function onToggleMemo(): void {
   if (!game) return;
   state.game = { ...game, memoMode: !game.memoMode };
   updateMemoBtn(state.game);
+  updateNumpadCounts(state.game);
   haptic('light');
 }
 
@@ -649,7 +701,7 @@ function updateNumpadCounts(game: GameState): void {
     if (n < 1 || n > 9) return;
     const cnt = counts[n];
     const completed = cnt >= 9;
-    btn.classList.toggle('completed', completed);
+    btn.classList.toggle('completed', completed && !game.memoMode);
     const countEl = btn.querySelector('.num-count');
     if (countEl) countEl.textContent = completed ? '' : String(9 - cnt);
   });

@@ -10,15 +10,15 @@
   --text:         #1a1b2e;
   --text-2:       #5a5b6a;
   --text-3:       #9a9baa;
-  --accent:       #6366f1;
-  --accent-2:     #818cf8;
-  --accent-bg:    #eef0ff;
-  --accent-light: rgba(99,102,241,0.12);
+  --accent:       oklch(58% 0.20 275);
+  --accent-2:     oklch(68% 0.16 275);
+  --accent-bg:    oklch(96% 0.03 275);
+  --accent-light: oklch(58% 0.20 275 / 0.12);
   --danger:       #ef4444;
   --danger-bg:    rgba(239,68,68,0.10);
   --success:      #22c55e;
-  --border:       rgba(0,0,0,0.10);
-  --border-strong:rgba(0,0,0,0.25);
+  --border:       oklch(22% 0.02 275 / 0.10);
+  --border-strong:oklch(22% 0.02 275 / 0.25);
   --shadow:       0 2px 16px rgba(0,0,0,0.08);
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.14);
   --radius:       12px;
@@ -26,9 +26,9 @@
 
   /* Cell colors */
   --cell-bg:        #ffffff;
-  --cell-selected:  #6366f1;
-  --cell-peer:      #eef0fa;
-  --cell-sameval:   #dde0ff;
+  --cell-selected:  oklch(91% 0.045 275);
+  --cell-peer:      oklch(97% 0.012 275);
+  --cell-sameval:   oklch(94% 0.035 275);
   --cell-given:     #1a1b2e;
   --cell-user:      #6366f1;
   --cell-memo:      #888;
@@ -36,18 +36,18 @@
   --cell-error:     #dc2626;
 
   /* Cage colors (killer sudoku) */
-  --cage-0: rgba(99,102,241,0.08);
-  --cage-1: rgba(236,72,153,0.08);
-  --cage-2: rgba(34,197,94,0.08);
-  --cage-3: rgba(245,158,11,0.08);
-  --cage-4: rgba(20,184,166,0.08);
-  --cage-5: rgba(168,85,247,0.08);
-  --cage-border-0: rgba(99,102,241,0.6);
-  --cage-border-1: rgba(236,72,153,0.6);
-  --cage-border-2: rgba(34,197,94,0.6);
-  --cage-border-3: rgba(245,158,11,0.6);
-  --cage-border-4: rgba(20,184,166,0.6);
-  --cage-border-5: rgba(168,85,247,0.6);
+  --cage-0: oklch(58% 0.20 275 / 0.16);
+  --cage-1: oklch(62% 0.22 350 / 0.16);
+  --cage-2: oklch(70% 0.18 145 / 0.16);
+  --cage-3: oklch(78% 0.16 85 / 0.16);
+  --cage-4: oklch(72% 0.14 190 / 0.16);
+  --cage-5: oklch(63% 0.20 305 / 0.16);
+  --cage-border-0: oklch(58% 0.20 275 / 0.32);
+  --cage-border-1: oklch(62% 0.22 350 / 0.32);
+  --cage-border-2: oklch(70% 0.18 145 / 0.32);
+  --cage-border-3: oklch(78% 0.16 85 / 0.32);
+  --cage-border-4: oklch(72% 0.14 190 / 0.32);
+  --cage-border-5: oklch(63% 0.20 305 / 0.32);
 }
 
 [data-theme="dark"] {
@@ -58,40 +58,40 @@
   --text:         #e8e9f8;
   --text-2:       #9a9bca;
   --text-3:       #5a5b7a;
-  --accent:       #818cf8;
-  --accent-2:     #6366f1;
-  --accent-bg:    #1e1f40;
-  --accent-light: rgba(129,140,248,0.15);
+  --accent:       oklch(74% 0.15 275);
+  --accent-2:     oklch(64% 0.18 275);
+  --accent-bg:    oklch(25% 0.055 275);
+  --accent-light: oklch(74% 0.15 275 / 0.15);
   --danger:       #f87171;
   --danger-bg:    rgba(248,113,113,0.12);
   --success:      #4ade80;
-  --border:       rgba(255,255,255,0.08);
-  --border-strong:rgba(255,255,255,0.20);
+  --border:       oklch(94% 0.02 275 / 0.08);
+  --border-strong:oklch(94% 0.02 275 / 0.20);
   --shadow:       0 2px 16px rgba(0,0,0,0.4);
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.6);
 
   --cell-bg:        #1a1b2e;
-  --cell-selected:  #818cf8;
-  --cell-peer:      #1e2040;
-  --cell-sameval:   #272860;
+  --cell-selected:  oklch(36% 0.11 275);
+  --cell-peer:      oklch(22% 0.03 275);
+  --cell-sameval:   oklch(28% 0.07 275);
   --cell-given:     #e8e9f8;
   --cell-user:      #818cf8;
   --cell-memo:      #666;
   --cell-error-bg:  rgba(248,113,113,0.12);
   --cell-error:     #f87171;
 
-  --cage-0: rgba(129,140,248,0.10);
-  --cage-1: rgba(244,114,182,0.10);
-  --cage-2: rgba(74,222,128,0.10);
-  --cage-3: rgba(251,191,36,0.10);
-  --cage-4: rgba(45,212,191,0.10);
-  --cage-5: rgba(192,132,252,0.10);
-  --cage-border-0: rgba(129,140,248,0.55);
-  --cage-border-1: rgba(244,114,182,0.55);
-  --cage-border-2: rgba(74,222,128,0.55);
-  --cage-border-3: rgba(251,191,36,0.55);
-  --cage-border-4: rgba(45,212,191,0.55);
-  --cage-border-5: rgba(192,132,252,0.55);
+  --cage-0: oklch(74% 0.15 275 / 0.12);
+  --cage-1: oklch(74% 0.17 350 / 0.12);
+  --cage-2: oklch(78% 0.16 145 / 0.12);
+  --cage-3: oklch(82% 0.14 85 / 0.12);
+  --cage-4: oklch(78% 0.12 190 / 0.12);
+  --cage-5: oklch(74% 0.16 305 / 0.12);
+  --cage-border-0: oklch(74% 0.15 275 / 0.28);
+  --cage-border-1: oklch(74% 0.17 350 / 0.28);
+  --cage-border-2: oklch(78% 0.16 145 / 0.28);
+  --cage-border-3: oklch(82% 0.14 85 / 0.28);
+  --cage-border-4: oklch(78% 0.12 190 / 0.28);
+  --cage-border-5: oklch(74% 0.16 305 / 0.28);
 }
 
 /* ============================================================
@@ -533,8 +533,8 @@ body {
 .cell.given .cell-value   { color: var(--cell-given); }
 .cell.user  .cell-value   { color: var(--cell-user); }
 .cell.error .cell-value   { color: var(--cell-error); }
-.cell.hl-selected .cell-value { color: #fff; }
-[data-theme="dark"] .cell.hl-selected .cell-value { color: #1a1b2e; }
+.cell.hl-selected .cell-value { color: #1a1b2e; }
+[data-theme="dark"] .cell.hl-selected .cell-value { color: #f4f5ff; }
 
 /* Memo grid */
 .cell-memos {
@@ -557,8 +557,8 @@ body {
 }
 
 .memo-num.active { color: var(--accent); }
-.cell.hl-selected .memo-num.active { color: #fff; }
-[data-theme="dark"] .cell.hl-selected .memo-num.active { color: #1a1b2e; }
+.cell.hl-selected .memo-num.active { color: #1a1b2e; }
+[data-theme="dark"] .cell.hl-selected .memo-num.active { color: #f4f5ff; }
 
 /* Killer Sudoku: cage overlay canvas */
 .cage-canvas {
@@ -577,6 +577,7 @@ body {
   font-weight: 700;
   color: var(--text-2);
   line-height: 1;
+  text-align: right;
   pointer-events: none;
   z-index: 4;
 }
