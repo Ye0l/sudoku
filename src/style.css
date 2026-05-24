@@ -534,6 +534,7 @@ body {
 .cell.user  .cell-value   { color: var(--cell-user); }
 .cell.error .cell-value   { color: var(--cell-error); }
 .cell.hl-selected .cell-value { color: #fff; }
+[data-theme="dark"] .cell.hl-selected .cell-value { color: #1a1b2e; }
 
 /* Memo grid */
 .cell-memos {
@@ -557,6 +558,7 @@ body {
 
 .memo-num.active { color: var(--accent); }
 .cell.hl-selected .memo-num.active { color: #fff; }
+[data-theme="dark"] .cell.hl-selected .memo-num.active { color: #1a1b2e; }
 
 /* Killer Sudoku: cage overlay canvas */
 .cage-canvas {
