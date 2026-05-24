@@ -80,8 +80,8 @@ function solveInternal(grid: Grid, random: boolean, limit: number): number {
   for (const n of candidates) {
     grid[pos] = n;
     solutions += solveInternal(grid, random, limit - solutions);
-    grid[pos] = 0;
     if (solutions >= limit) break;
+    grid[pos] = 0;
   }
   return solutions;
 }
