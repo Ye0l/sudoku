@@ -1,7 +1,10 @@
 // Main application controller
 
-import type { AppState, GameState, GameType, Difficulty, Screen, Theme, CellState } from './types.ts';
-import { loadGame, saveGame, loadHistory, loadSettings, saveSettings, clearHistory } from './storage.ts';
+import type { AppState, GameState, GameType, Difficulty, Screen, Theme, CellState, CachedPuzzle } from './types.ts';
+import {
+  loadGame, saveGame, loadHistory, loadSettings, saveSettings, clearHistory,
+  takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles,
+} from './storage.ts';
 import {
   createGame, setCellValue, eraseCellValue, autoSave,
   startTimer, stopTimer, formatTime, getElapsed,
@@ -23,6 +26,7 @@ const state: AppState = {
 let selectedType: GameType = 'classic';
 let selectedDiff: Difficulty = 'easy';
 let pendingWorker: Worker | null = null;
+const cacheFillInProgress = new Set<string>();
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -170,6 +174,7 @@ function selectType(type: GameType): void {
   selectedType = type;
   el.typeClassic.classList.toggle('active', type === 'classic');
   el.typeKiller.classList.toggle('active', type === 'killer');
+  fillPuzzleCache(selectedType, selectedDiff);
 }
 
 function selectDiff(diff: Difficulty): void {
@@ -177,11 +182,66 @@ function selectDiff(diff: Difficulty): void {
   el.diffBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.diff === diff);
   });
+  fillPuzzleCache(selectedType, selectedDiff);
 }
 
 // ── Puzzle worker ─────────────────────────────────────────────────────────────
 
+function cacheKey(type: GameType, diff: Difficulty): string {
+  return `${type}:${diff}`;
+}
+
+function createCachedPuzzle(type: GameType, diff: Difficulty, puzzle: { board: number[]; solution: number[]; cages?: CachedPuzzle['cages'] }): CachedPuzzle {
+  return {
+    type,
+    difficulty: diff,
+    board: puzzle.board,
+    solution: puzzle.solution,
+    cages: puzzle.cages,
+    createdAt: Date.now(),
+  };
+}
+
+function gameFromPuzzle(type: GameType, diff: Difficulty, puzzle: { board: number[]; solution: number[]; cages?: CachedPuzzle['cages'] }): GameState {
+  return createGame(type, diff, puzzle.board, puzzle.solution, puzzle.cages);
+}
+
+function fillPuzzleCache(type: GameType, diff: Difficulty): void {
+  if (type !== 'killer') return;
+  if (countCachedPuzzles(type, diff) > 0) return;
+
+  const key = cacheKey(type, diff);
+  if (cacheFillInProgress.has(key)) return;
+  cacheFillInProgress.add(key);
+
+  const worker = createPuzzleWorker();
+  const id = crypto.randomUUID();
+
+  worker.onmessage = (e: MessageEvent) => {
+    if (e.data.id !== id) return;
+    worker.terminate();
+    cacheFillInProgress.delete(key);
+
+    if (e.data.type !== 'error') {
+      addCachedPuzzle(createCachedPuzzle(type, diff, e.data.puzzle));
+    }
+  };
+
+  worker.onerror = () => {
+    worker.terminate();
+    cacheFillInProgress.delete(key);
+  };
+
+  worker.postMessage({ type, difficulty: diff, id });
+}
+
 function generatePuzzle(type: GameType, diff: Difficulty): Promise<GameState> {
+  const cached = type === 'killer' ? takeCachedPuzzle(type, diff) : null;
+  if (cached) {
+    fillPuzzleCache(type, diff);
+    return Promise.resolve(gameFromPuzzle(type, diff, cached));
+  }
+
   return new Promise((resolve, reject) => {
     // Cancel pending worker
     if (pendingWorker) { pendingWorker.terminate(); pendingWorker = null; }
@@ -201,14 +261,8 @@ function generatePuzzle(type: GameType, diff: Difficulty): Promise<GameState> {
       }
 
       const puzzle = e.data.puzzle;
-      const game = createGame(
-        type,
-        diff,
-        puzzle.board,
-        puzzle.solution,
-        puzzle.cages,
-      );
-      resolve(game);
+      resolve(gameFromPuzzle(type, diff, puzzle));
+      fillPuzzleCache(type, diff);
     };
 
     worker.onerror = (e: ErrorEvent) => {

@@ -28,6 +28,15 @@ export interface GameState {
   paused: boolean;
 }
 
+export interface CachedPuzzle {
+  type: GameType;
+  difficulty: Difficulty;
+  board: number[];
+  solution: number[];
+  cages?: Cage[];
+  createdAt: number;
+}
+
 export interface HistoryRecord {
   id: string;
   type: GameType;
