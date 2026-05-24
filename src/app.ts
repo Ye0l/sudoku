@@ -316,9 +316,9 @@ function renderBoard(game: GameState): void {
 
   updateLayoutMode();
 
-  // Determine board size
+  // Determine board size — subtract padding (8px each side = 16px per axis)
   const area     = el.boardGrid.parentElement!;
-  const maxSize  = Math.min(area.clientWidth, area.clientHeight) - 4;
+  const maxSize  = Math.min(area.clientWidth - 16, area.clientHeight - 16) - 4;
   const size     = Math.max(200, maxSize);
   const cellSize = Math.floor(size / 9);
   const boardPx  = cellSize * 9;
