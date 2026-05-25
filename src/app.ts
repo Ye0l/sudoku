@@ -418,7 +418,7 @@ function renderBoard(game: GameState): void {
 
   // Killer: prepare cage overlay
   if (game.cages) {
-    setupCageCanvas(game, boardPx, cellSize);
+    setupCageCanvas(game, boardPx);
   } else {
     el.cageCanvas.style.display = 'none';
     el.cageLineCanvas.style.display = 'none';
@@ -430,11 +430,15 @@ function renderBoard(game: GameState): void {
   updateMemoBtn(game);
 }
 
-function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): void {
+function setupCageCanvas(game: GameState, boardPx: number): void {
   const canvas = el.cageCanvas;
   const lineCanvas = el.cageLineCanvas;
   const canvasPad = 0;
   const canvasPx = boardPx + canvasPad * 2;
+  const gridStyle = getComputedStyle(el.boardGrid);
+  const gridBorder = parseFloat(gridStyle.borderLeftWidth) || 0;
+  const gridGap = parseFloat(gridStyle.columnGap) || 0;
+  const cellTrack = (boardPx - gridBorder * 2 - gridGap * 8) / 9;
   const dpr = window.devicePixelRatio || 1;
   [canvas, lineCanvas].forEach(c => {
     c.style.display = 'block';
@@ -467,7 +471,7 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
   const CAGE_BORDERS = isDark
     ? ['oklch(74% 0.15 275 / 0.68)','oklch(74% 0.17 350 / 0.68)','oklch(78% 0.16 145 / 0.68)','oklch(82% 0.14 85 / 0.68)','oklch(78% 0.12 190 / 0.68)','oklch(74% 0.16 305 / 0.68)']
     : ['oklch(58% 0.20 275 / 0.62)','oklch(62% 0.22 350 / 0.62)','oklch(70% 0.18 145 / 0.62)','oklch(78% 0.16 85 / 0.68)','oklch(72% 0.14 190 / 0.62)','oklch(63% 0.20 305 / 0.62)'];
-  const BOX_GRID = isDark ? 'oklch(96% 0.01 275 / 0.28)' : 'oklch(18% 0.01 275 / 0.22)';
+  const BOX_GRID = isDark ? 'oklch(96% 0.01 275 / 0.15)' : 'oklch(18% 0.01 275 / 0.13)';
 
   // Pass 1: cage fills
   cages.forEach(cage => {
@@ -475,17 +479,22 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     cage.cells.forEach(pos => {
       const r = (pos / 9) | 0;
       const c = pos % 9;
-      ctx.fillRect(canvasPad + c * cellSize, canvasPad + r * cellSize, cellSize, cellSize);
+      ctx.fillRect(
+        canvasPad + gridBorder + c * (cellTrack + gridGap),
+        canvasPad + gridBorder + r * (cellTrack + gridGap),
+        cellTrack,
+        cellTrack,
+      );
     });
   });
 
-  const cageInset = Math.max(4, Math.round(cellSize * 0.1));
-  const labelFontSize = Math.max(9, Math.round(cellSize * 0.21));
+  const cageInset = Math.max(4, Math.round(cellTrack * 0.1));
+  const labelFontSize = Math.max(9, Math.round(cellTrack * 0.21));
   const labelFontFamily = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
   const labelFont = `700 ${labelFontSize}px ${labelFontFamily}`;
-  const labelClearPadX = Math.max(2, Math.round(cellSize * 0.055));
-  const labelClearPadY = Math.max(2, Math.round(cellSize * 0.045));
-  const labelRadius = Math.max(3, Math.round(cellSize * 0.07));
+  const labelClearPadX = Math.max(2, Math.round(cellTrack * 0.055));
+  const labelClearPadY = Math.max(2, Math.round(cellTrack * 0.045));
+  const labelRadius = Math.max(3, Math.round(cellTrack * 0.07));
 
   const getLabelCell = (cage: { cells: number[] }): number => {
     let labelCell = cage.cells[0];
@@ -559,6 +568,16 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     return loops;
   };
 
+  const gridLineCoord = (line: number): number => {
+    if (line <= 0) return canvasPad + gridBorder;
+    if (line >= 9) return canvasPad + boardPx - gridBorder;
+    return canvasPad + gridBorder + line * cellTrack + (line - 0.5) * gridGap;
+  };
+
+  const cellStartCoord = (line: number): number => {
+    return canvasPad + gridBorder + line * (cellTrack + gridGap);
+  };
+
   const insetPoint = (prev: GridPoint, point: GridPoint, next: GridPoint): [number, number] => {
     const inDx = Math.sign(point.col - prev.col);
     const inDy = Math.sign(point.row - prev.row);
@@ -569,8 +588,8 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     const xOffset = (inNormal.x !== 0 ? inNormal.x : outNormal.x) * cageInset;
     const yOffset = (inNormal.y !== 0 ? inNormal.y : outNormal.y) * cageInset;
     return [
-      canvasPad + point.col * cellSize + xOffset,
-      canvasPad + point.row * cellSize + yOffset,
+      gridLineCoord(point.col) + xOffset,
+      gridLineCoord(point.row) + yOffset,
     ];
   };
 
@@ -615,8 +634,8 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
   const labelBounds = (sum: number, labelCell: number): { x: number; y: number; w: number; h: number } => {
     const row = (labelCell / 9) | 0;
     const col = labelCell % 9;
-    const labelX = col * cellSize + cageInset + 1;
-    const labelY = row * cellSize + cageInset - 4;
+    const labelX = cellStartCoord(col) + cageInset + 1;
+    const labelY = cellStartCoord(row) + cageInset - 4;
     lineCtx.font = labelFont;
     const textWidth = Math.ceil(lineCtx.measureText(String(sum)).width);
     return {
@@ -645,15 +664,15 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     lineCtx.setLineDash([]);
     lineCtx.lineCap = 'butt';
     lineCtx.lineJoin = 'miter';
-    lineCtx.lineWidth = Math.max(1.25, cellSize * 0.026);
+    lineCtx.lineWidth = Math.max(1, cellTrack * 0.018);
     lineCtx.strokeStyle = BOX_GRID;
     lineCtx.beginPath();
     [3, 6].forEach(n => {
-      const p = canvasPad + n * cellSize;
-      lineCtx.moveTo(p, canvasPad);
-      lineCtx.lineTo(p, canvasPad + boardPx);
-      lineCtx.moveTo(canvasPad, p);
-      lineCtx.lineTo(canvasPad + boardPx, p);
+      const p = gridLineCoord(n);
+      lineCtx.moveTo(p, canvasPad + gridBorder);
+      lineCtx.lineTo(p, canvasPad + boardPx - gridBorder);
+      lineCtx.moveTo(canvasPad + gridBorder, p);
+      lineCtx.lineTo(canvasPad + boardPx - gridBorder, p);
     });
     lineCtx.stroke();
     lineCtx.restore();
@@ -662,8 +681,8 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
   // Pass 2: dotted cage borders on a dedicated overlay above the base Sudoku grid.
   lineCtx.lineCap = 'round';
   lineCtx.lineJoin = 'round';
-  lineCtx.lineWidth = Math.max(1.5, cellSize * 0.035);
-  lineCtx.setLineDash([Math.max(1.5, cellSize * 0.055), Math.max(3, cellSize * 0.07)]);
+  lineCtx.lineWidth = Math.max(1.5, cellTrack * 0.035);
+  lineCtx.setLineDash([Math.max(1.5, cellTrack * 0.055), Math.max(3, cellTrack * 0.07)]);
   lineCtx.shadowBlur = 0;
   lineCtx.shadowColor = 'transparent';
   strokeBoxGrid();
@@ -689,11 +708,12 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
     const labelCell = getLabelCell(cage);
     const row = (labelCell / 9) | 0;
     const col = labelCell % 9;
-    const x = col * cellSize;
-    const y = row * cellSize;
+    const x = cellStartCoord(col);
+    const y = cellStartCoord(row);
     const label = document.createElement('div');
     label.className = 'cage-sum-label';
     label.textContent = String(cage.sum);
+    label.style.fontSize = labelFontSize + 'px';
     label.style.left = (x + cageInset + 1) + 'px';
     label.style.top  = (y + cageInset - 4) + 'px';
     el.boardContainer.appendChild(label);
@@ -1096,8 +1116,7 @@ export function init(): void {
       // Refresh cage canvas if in game
       if (state.screen === 'game' && state.game?.cages) {
         const boardPx = el.boardContainer.clientWidth;
-        const cellSize = Math.floor(boardPx / 9);
-        setupCageCanvas(state.game, boardPx, cellSize);
+        setupCageCanvas(state.game, boardPx);
       }
     });
   });

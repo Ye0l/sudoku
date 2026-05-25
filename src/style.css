@@ -19,6 +19,7 @@
   --success:      #22c55e;
   --border:       oklch(22% 0.02 275 / 0.10);
   --border-strong:oklch(22% 0.02 275 / 0.25);
+  --box-border:   oklch(22% 0.02 275 / 0.15);
   --shadow:       0 2px 16px rgba(0,0,0,0.08);
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.14);
   --radius:       12px;
@@ -67,6 +68,7 @@
   --success:      #4ade80;
   --border:       oklch(94% 0.02 275 / 0.08);
   --border-strong:oklch(94% 0.02 275 / 0.20);
+  --box-border:   oklch(94% 0.02 275 / 0.13);
   --shadow:       0 2px 16px rgba(0,0,0,0.4);
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.6);
 
@@ -514,8 +516,8 @@ body {
 }
 
 /* Box border helpers */
-.cell.box-border-right  { border-right:  2px solid var(--border-strong); }
-.cell.box-border-bottom { border-bottom: 2px solid var(--border-strong); }
+.cell.box-border-right  { border-right:  1px solid var(--box-border); }
+.cell.box-border-bottom { border-bottom: 1px solid var(--box-border); }
 
 /* Highlight states */
 .cell.hl-selected  { background: var(--cell-selected) !important; }
@@ -541,8 +543,8 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  width: 90%;
-  height: 90%;
+  width: 80%;
+  height: 80%;
   pointer-events: none;
 }
 
@@ -550,7 +552,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(var(--cell-size, 38px) * 0.22);
+  font-size: calc(var(--cell-size, 38px) * 0.20);
   font-weight: 600;
   color: var(--cell-memo);
   line-height: 1;
