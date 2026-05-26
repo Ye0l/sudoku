@@ -7,10 +7,10 @@ export type Theme = 'light' | 'dark' | 'auto';
 export type Screen = 'menu' | 'game' | 'history' | 'settings';
 
 export interface CellState {
-  value: number;       // 0 = empty
-  given: boolean;      // immutable given digit
-  memos: number[];     // memo digits 1-9
-  error: boolean;      // highlight as wrong
+  value: number;
+  given: boolean;
+  memos: number[];
+  error: boolean;
 }
 
 export interface GameState {
@@ -22,10 +22,11 @@ export interface GameState {
   cages?: Cage[];
   selectedCell: number; // -1 = none
   memoMode: boolean;
-  startTime: number;   // epoch ms when started
-  elapsed: number;     // accumulated ms (paused time)
+  startTime: number;
+  elapsed: number;
   completed: boolean;
   paused: boolean;
+  hints: number;        // hint count
 }
 
 export interface HistoryRecord {
@@ -34,8 +35,9 @@ export interface HistoryRecord {
   difficulty: Difficulty;
   completed: boolean;
   elapsed: number;
-  date: number; // epoch ms
+  date: number;
   moves: number;
+  hints: number;        // hint count
 }
 
 export interface AppSettings {

@@ -36,6 +36,7 @@ export function createGame(
     elapsed: 0,
     completed: false,
     paused: false,
+    hints: 0,
   };
 }
 
@@ -74,23 +75,48 @@ export function formatTime(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// Build the set of cells that should have memo `value` removed
+// when a confirmed value is placed at `pos`.
+function buildMemoRemovalSet(game: GameState, pos: number, _value: number): Set<number> {
+  const set = new Set<number>(getPeers(pos));
+  // Also remove from cage mates (killer sudoku)
+  if (game.cages) {
+    const cage = game.cages.find(c => c.cells.includes(pos));
+    if (cage) cage.cells.forEach(c => { if (c !== pos) set.add(c); });
+  }
+  return set;
+}
+
 export function setCellValue(game: GameState, pos: number, value: number): GameState {
-  const cells = game.cells.map((c, i) => {
-    if (i !== pos) return c;
-    if (c.given) return c;
-    if (game.memoMode && value !== 0) {
+  const cell = game.cells[pos];
+  if (cell.given) return game;
+
+  // ── Memo mode: toggle the memo digit on this cell only ──────────────────────
+  if (game.memoMode && value !== 0) {
+    const cells = game.cells.map((c, i) => {
+      if (i !== pos) return c;
       const memos = c.memos.includes(value)
         ? c.memos.filter(m => m !== value)
-        : [...c.memos, value].sort();
+        : [...c.memos, value].sort((a, b) => a - b);
       return { ...c, value: 0, memos, error: false };
-    }
+    });
+    return validateAndCheck({ ...game, cells });
+  }
+
+  // ── Confirm mode: place value, then remove it from peers' memos ─────────────
+  const cells = game.cells.map((c, i) => {
+    if (i !== pos) return c;
     return { ...c, value, memos: [], error: false };
   });
 
-  // Clear memos in peers when placing a value
-  const peers = getPeers(pos);
+  if (value === 0) {
+    return validateAndCheck({ ...game, cells });
+  }
+
+  // Remove `value` from memos in: same row + col + box + cage mates
+  const removalSet = buildMemoRemovalSet(game, pos, value);
   const updatedCells = cells.map((c, i) => {
-    if (!peers.includes(i)) return c;
+    if (!removalSet.has(i) || c.memos.length === 0) return c;
     const newMemos = c.memos.filter(m => m !== value);
     return newMemos.length !== c.memos.length ? { ...c, memos: newMemos } : c;
   });
@@ -131,6 +157,7 @@ export function validateAndCheck(game: GameState): GameState {
       elapsed,
       date: Date.now(),
       moves: 0,
+      hints: game.hints,
     };
     addHistory(record);
   }
