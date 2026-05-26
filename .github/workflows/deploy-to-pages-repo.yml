@@ -2,12 +2,10 @@ name: Deploy to GitHub Pages repo
 
 on:
   push:
-    branches: [main]         # 유저가 직접 푸시할 때
-  workflow_dispatch:          # GitHub UI에서 수동 실행
-  repository_dispatch:        # Claude 푸시 후 API 트리거 (event_type: deploy)
+    branches: [main]
+  workflow_dispatch:
+  repository_dispatch:
     types: [deploy]
-  schedule:
-    - cron: '0 * * * *'      # 매 정시 폴백 (1시간 간격)
 
 permissions:
   contents: read
@@ -23,44 +21,20 @@ jobs:
     steps:
       - name: Check out sudoku
         uses: actions/checkout@v4
-        with:
-          ref: main
-
-      # ── 스케줄 폴백 전용 조기 종료 ─────────────────────────────────────────
-      # 이미 배포된 커밋이면 나머지 스텝을 건너뜀 (빌드 비용 절감)
-      - name: Check if deploy is needed
-        id: check
-        run: |
-          CURRENT_SHA=$(git rev-parse HEAD)
-          # pages 레포에 저장된 마지막 배포 SHA를 가져옴 (없으면 "none")
-          DEPLOYED_SHA=$(curl -sf \
-            "https://raw.githubusercontent.com/Ye0l/Ye0l.github.io/main/docs/sudoku/.deployed-sha" \
-            || echo "none")
-          echo "current=$CURRENT_SHA"
-          echo "deployed=$DEPLOYED_SHA"
-          if [ "$CURRENT_SHA" = "$DEPLOYED_SHA" ]; then
-            echo "skip=true"  >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Set up Node.js
-        if: steps.check.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
-        if: steps.check.outputs.skip != 'true'
         run: npm ci
 
       - name: Build
-        if: steps.check.outputs.skip != 'true'
         run: npm run build
 
       - name: Check out GitHub Pages repo
-        if: steps.check.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           repository: Ye0l/Ye0l.github.io
@@ -68,17 +42,12 @@ jobs:
           path: pages-repo
 
       - name: Copy build output
-        if: steps.check.outputs.skip != 'true'
         run: |
           rm -rf pages-repo/docs/sudoku
           mkdir -p pages-repo/docs/sudoku
           cp -R dist/. pages-repo/docs/sudoku/
-          # 배포된 SHA를 기록 (다음 실행의 조기 종료 판단에 사용)
-          git -C /home/runner/work/sudoku/sudoku rev-parse HEAD \
-            > pages-repo/docs/sudoku/.deployed-sha
 
       - name: Commit and push
-        if: steps.check.outputs.skip != 'true'
         working-directory: pages-repo
         run: |
           git config user.name "github-actions[bot]"
@@ -88,5 +57,5 @@ jobs:
             echo "No changes to deploy."
             exit 0
           fi
-          git commit -m "Deploy sudoku from Ye0l/sudoku@${GITHUB_SHA:-$(git -C .. rev-parse HEAD)}"
+          git commit -m "Deploy sudoku from Ye0l/sudoku@${GITHUB_SHA}"
           git push origin main
