@@ -34,8 +34,8 @@ interface CalcState {
 }
 const calc: CalcState = { expr: '', result: '', active: false };
 
-// Undo stack records full cell state + hint count before each move
-const undoStack: { cells: CellState[]; hints: number }[] = [];
+// Undo stack records cell state before each move (hints are permanent, not undone)
+const undoStack: { cells: CellState[] }[] = [];
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +83,7 @@ const el = {
   toggleErrors:   document.getElementById('toggle-errors') as HTMLInputElement,
   toggleHighlights: document.getElementById('toggle-highlights') as HTMLInputElement,
   toggleHaptics:  document.getElementById('toggle-haptics') as HTMLInputElement,
+  toggleNightly:  document.getElementById('toggle-nightly') as HTMLInputElement,
   themeBtns:      document.querySelectorAll<HTMLButtonElement>('.theme-btn'),
 };
 
@@ -557,10 +558,10 @@ function onUndo(): void {
   if (!game) return;
 
   haptic('light');
-  state.game = { ...game, cells: prev.cells, hints: prev.hints };
+  // hints are permanent — not restored on undo
+  state.game = { ...game, cells: prev.cells };
   renderAllCells(state.game);
   updateNumpadCounts(state.game);
-  updateHintBadge(state.game);
   scheduleSave(state.game);
 }
 
@@ -598,10 +599,7 @@ function onToggleMemo(): void {
 // ── Undo helpers ──────────────────────────────────────────────────────────────
 
 function pushUndo(game: GameState): void {
-  undoStack.push({
-    cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })),
-    hints: game.hints,
-  });
+  undoStack.push({ cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })) });
   if (undoStack.length > 50) undoStack.shift();
 }
 
@@ -779,11 +777,16 @@ function renderHistory(): void {
 
 // ── Settings screen ───────────────────────────────────────────────────────────
 
+function applyNightly(nightly: boolean): void {
+  document.documentElement.classList.toggle('nightly', nightly);
+}
+
 function syncSettingsUI(): void {
   const s = state.settings;
   el.toggleErrors.checked     = s.showErrors;
   el.toggleHighlights.checked = s.showHighlights;
   el.toggleHaptics.checked    = s.haptics;
+  el.toggleNightly.checked    = s.nightly;
   el.themeBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.theme === s.theme));
 }
 
@@ -806,6 +809,7 @@ function onResize(): void {
 
 export function init(): void {
   applyTheme(state.settings.theme);
+  applyNightly(state.settings.nightly);
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (state.settings.theme === 'auto') applyTheme('auto');
@@ -921,6 +925,12 @@ export function init(): void {
   el.toggleHaptics.addEventListener('change', () => {
     state.settings = { ...state.settings, haptics: el.toggleHaptics.checked };
     saveSettingsState();
+  });
+  el.toggleNightly.addEventListener('change', () => {
+    const nightly = el.toggleNightly.checked;
+    state.settings = { ...state.settings, nightly };
+    saveSettingsState();
+    applyNightly(nightly);
   });
   el.themeBtns.forEach(btn => {
     btn.addEventListener('click', () => {

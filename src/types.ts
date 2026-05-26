@@ -26,7 +26,7 @@ export interface GameState {
   elapsed: number;
   completed: boolean;
   paused: boolean;
-  hints: number;        // hint count
+  hints: number;
 }
 
 export interface HistoryRecord {
@@ -37,7 +37,7 @@ export interface HistoryRecord {
   elapsed: number;
   date: number;
   moves: number;
-  hints: number;        // hint count
+  hints: number;
 }
 
 export interface AppSettings {
@@ -46,6 +46,7 @@ export interface AppSettings {
   showHighlights: boolean;
   haptics: boolean;
   autoAdvance: boolean;
+  nightly: boolean;
 }
 
 export interface AppState {
@@ -61,4 +62,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHighlights: true,
   haptics: true,
   autoAdvance: false,
+  nightly: false,
 };

@@ -1300,3 +1300,46 @@ body {
    Scrollbar (hidden but functional)
    ============================================================ */
 ::-webkit-scrollbar { width: 0; }
+
+/* ============================================================
+   Nightly mode
+   ============================================================ */
+
+.nightly {
+  --accent:        #f59e0b;
+  --accent-2:      #fbbf24;
+  --accent-bg:     #fffbeb;
+  --accent-light:  rgba(245,158,11,0.15);
+  --cell-selected: #f59e0b;
+  --cell-user:     #d97706;
+}
+
+.nightly[data-theme="dark"] {
+  --accent:        #fbbf24;
+  --accent-2:      #f59e0b;
+  --accent-bg:     #2d2000;
+  --accent-light:  rgba(251,191,36,0.18);
+  --cell-selected: #fbbf24;
+  --cell-user:     #fbbf24;
+}
+
+/* NIGHTLY badge in nav title */
+.nightly .nav-title::after {
+  content: 'NIGHTLY';
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: 4px;
+  vertical-align: middle;
+  line-height: 14px;
+}
+
+/* Nightly toggle gets amber color */
+.toggle input:checked + .toggle-slider-nightly {
+  background: #f59e0b;
+}
