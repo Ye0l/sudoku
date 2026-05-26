@@ -67,15 +67,5 @@ function showBadge(): void {
   badge.id = 'nightly-badge';
   badge.className = 'nightly-badge';
   badge.setAttribute('aria-hidden', 'true');
-
-  const star = document.createElement('span');
-  star.className = 'nightly-badge-star';
-  star.textContent = '✦';
-
-  const label = document.createElement('span');
-  label.textContent = 'NIGHTLY';
-
-  badge.appendChild(star);
-  badge.appendChild(label);
   document.getElementById('app')?.appendChild(badge);
 }

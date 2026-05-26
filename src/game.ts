@@ -34,6 +34,7 @@ export function createGame(
     memoMode: false,
     startTime: Date.now(),
     elapsed: 0,
+    hintCount: 0,
     completed: false,
     paused: false,
   };
@@ -74,8 +75,8 @@ export function formatTime(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export function setCellValue(game: GameState, pos: number, value: number): GameState {
-  const cells = game.cells.map((c, i) => {
+export function setCellValue(game: GameState, pos: number, value: number, removePeerMemo = false): GameState {
+  let cells = game.cells.map((c, i) => {
     if (i !== pos) return c;
     if (c.given) return c;
     if (game.memoMode && value !== 0) {
@@ -87,7 +88,41 @@ export function setCellValue(game: GameState, pos: number, value: number): GameS
     return { ...c, value, memos: [], error: false };
   });
 
+  if (removePeerMemo && !game.memoMode && value !== 0) {
+    cells = removePeerMemos({ ...game, cells }, pos, value);
+  }
+
   return validateAndCheck({ ...game, cells });
+}
+
+function removePeerMemos(game: GameState, pos: number, value: number): CellState[] {
+  const peers = getPeerPositions(game, pos);
+  return game.cells.map((cell, idx) => {
+    if (!peers.has(idx) || cell.memos.length === 0 || !cell.memos.includes(value)) return cell;
+    return { ...cell, memos: cell.memos.filter(memo => memo !== value) };
+  });
+}
+
+function getPeerPositions(game: GameState, pos: number): Set<number> {
+  const peers = new Set<number>();
+  const row = (pos / 9) | 0;
+  const col = pos % 9;
+  const box = getBoxIndex(pos);
+
+  for (let i = 0; i < 81; i++) {
+    if (i === pos) continue;
+    const peerRow = (i / 9) | 0;
+    const peerCol = i % 9;
+    if (peerRow === row || peerCol === col || getBoxIndex(i) === box) {
+      peers.add(i);
+    }
+  }
+
+  game.cages?.find(cage => cage.cells.includes(pos))?.cells.forEach(cell => {
+    if (cell !== pos) peers.add(cell);
+  });
+
+  return peers;
 }
 
 export function eraseCellValue(game: GameState, pos: number): GameState {
@@ -123,6 +158,7 @@ export function validateAndCheck(game: GameState): GameState {
       elapsed,
       date: Date.now(),
       moves: 0,
+      hintCount: game.hintCount ?? 0,
     };
     addHistory(record);
   }

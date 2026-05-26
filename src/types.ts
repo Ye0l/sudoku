@@ -4,6 +4,7 @@ import type { Difficulty } from './engine/sudoku.ts';
 export type { Difficulty, Cage };
 export type GameType = 'classic' | 'killer';
 export type Theme = 'light' | 'dark' | 'auto';
+export type NumpadLayout = 'row' | 'grid';
 export type Screen = 'menu' | 'game' | 'history' | 'settings';
 
 export interface CellState {
@@ -24,6 +25,7 @@ export interface GameState {
   memoMode: boolean;
   startTime: number;   // epoch ms when started
   elapsed: number;     // accumulated ms (paused time)
+  hintCount: number;
   completed: boolean;
   paused: boolean;
 }
@@ -45,6 +47,7 @@ export interface HistoryRecord {
   elapsed: number;
   date: number; // epoch ms
   moves: number;
+  hintCount: number;
 }
 
 export interface AppSettings {
@@ -54,6 +57,10 @@ export interface AppSettings {
   haptics: boolean;
   autoAdvance: boolean;
   nightly: boolean;
+  numpadLayout: NumpadLayout;
+  gridLineOpacity: number;
+  boxLineOpacity: number;
+  showKillerStats: boolean;
 }
 
 export interface AppState {
@@ -70,4 +77,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   haptics: true,
   autoAdvance: false,
   nightly: false,
+  numpadLayout: 'row',
+  gridLineOpacity: 0.14,
+  boxLineOpacity: 0.42,
+  showKillerStats: true,
 };

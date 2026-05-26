@@ -1,6 +1,6 @@
 // Main application controller
 
-import type { AppState, GameState, GameType, Difficulty, Screen, Theme, CellState, CachedPuzzle, HistoryRecord } from './types.ts';
+import type { AppState, GameState, GameType, Difficulty, Screen, Theme, NumpadLayout, CellState, CachedPuzzle, HistoryRecord } from './types.ts';
 import {
   loadGame, saveGame, loadHistory, loadSettings, saveSettings, clearHistory,
   takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, addHistory,
@@ -31,6 +31,11 @@ let pendingWorker: Worker | null = null;
 const cacheFillInProgress = new Set<string>();
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let confirmResolver: ((ok: boolean) => void) | null = null;
+let calcExpanded = false;
+let calcAccumulator = 0;
+let calcPendingOp: '+' | '-' | null = null;
+let calcInputValue = '';
+let calcEnteringNumber = true;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +61,11 @@ const el = {
   boardContainer:document.getElementById('board-container')!,
   cageCanvas:    document.getElementById('cage-canvas') as HTMLCanvasElement,
   cageLineCanvas:document.getElementById('cage-line-canvas') as HTMLCanvasElement,
+  killerStats:   document.getElementById('killer-stats')!,
+  statCage:      document.getElementById('killer-stat-cage')!,
+  statRow:       document.getElementById('killer-stat-row')!,
+  statCol:       document.getElementById('killer-stat-col')!,
+  statBox:       document.getElementById('killer-stat-box')!,
   loadingOverlay:document.getElementById('loading-overlay')!,
   completeOverlay:document.getElementById('complete-overlay')!,
   completeTime:  document.getElementById('complete-time')!,
@@ -80,6 +90,11 @@ const el = {
   btnErase:      document.getElementById('btn-erase')!,
   btnMemo:       document.getElementById('btn-memo')!,
   btnHint:       document.getElementById('btn-hint')!,
+  btnCalc:       document.getElementById('btn-calc') as HTMLButtonElement,
+  hintCount:     document.getElementById('hint-count')!,
+  calcInput:     document.getElementById('line-calc-input') as HTMLInputElement,
+  calcRow:       document.getElementById('line-calc')!,
+  calcPad:       document.getElementById('line-calc-pad')!,
 
   // History
   historyList:   document.getElementById('history-list')!,
@@ -89,6 +104,11 @@ const el = {
   toggleHighlights:document.getElementById('toggle-highlights') as HTMLInputElement,
   toggleHaptics:   document.getElementById('toggle-haptics') as HTMLInputElement,
   toggleNightly:   document.getElementById('toggle-nightly') as HTMLInputElement,
+  toggleKillerStats: document.getElementById('toggle-killer-stats') as HTMLInputElement,
+  gridLineOpacity: document.getElementById('grid-line-opacity') as HTMLInputElement,
+  boxLineOpacity:  document.getElementById('box-line-opacity') as HTMLInputElement,
+  gridLinePreview: document.getElementById('grid-line-preview')!,
+  numpadLayoutBtns:document.querySelectorAll<HTMLButtonElement>('.numpad-layout-btn'),
   themeBtns:       document.querySelectorAll<HTMLButtonElement>('.theme-btn'),
 };
 
@@ -188,6 +208,7 @@ function recordAbandonedGame(game: GameState): void {
     elapsed: getElapsed(game),
     date: Date.now(),
     moves: 0,
+    hintCount: game.hintCount ?? 0,
   };
   addHistory(record);
 }
@@ -201,6 +222,37 @@ function applyTheme(theme: Theme): void {
     root.setAttribute('data-theme', dark ? 'dark' : 'light');
   } else {
     root.setAttribute('data-theme', theme);
+  }
+  applyGridLineSettings();
+}
+
+function applyNumpadLayout(layout: NumpadLayout): void {
+  document.documentElement.setAttribute('data-numpad-layout', nightlyModule.isActive() ? layout : 'row');
+}
+
+function applyGridLineSettings(): void {
+  const root = document.documentElement;
+  const gridLineOpacity = nightlyModule.isActive() ? state.settings.gridLineOpacity : 0.14;
+  const boxLineOpacity = nightlyModule.isActive() ? state.settings.boxLineOpacity : 0.42;
+  root.style.setProperty('--grid-line-alpha', String(gridLineOpacity));
+  root.style.setProperty('--box-line-alpha', String(boxLineOpacity));
+  if (el.gridLinePreview) {
+    el.gridLinePreview.style.setProperty('--grid-line-alpha', String(gridLineOpacity));
+    el.gridLinePreview.style.setProperty('--box-line-alpha', String(boxLineOpacity));
+  }
+}
+
+function refreshNightlyFeatures(): void {
+  applyNumpadLayout(state.settings.numpadLayout);
+  applyGridLineSettings();
+  if (!nightlyModule.isActive()) {
+    calcExpanded = false;
+    updateCalculatorVisibility();
+  }
+  if (state.screen === 'game' && state.game) {
+    if (state.game.cages) setupCageCanvas(state.game, el.boardContainer.clientWidth);
+    renderAllCells(state.game);
+    updateKillerStats(state.game);
   }
 }
 
@@ -410,19 +462,23 @@ function updateLayoutMode(): void {
   const side = document.getElementById('game-side')!;
   const numpad = document.querySelector('.numpad') as HTMLElement;
   const controls = document.querySelector('.controls-bar') as HTMLElement;
-  const statusBar = document.querySelector('.game-status') as HTMLElement;
 
   if (landscape) {
     side.style.display = 'flex';
     // Move numpad and controls into side panel
+    side.appendChild(el.killerStats);
     side.appendChild(numpad);
+    side.appendChild(el.calcRow);
+    side.appendChild(el.calcPad);
     side.appendChild(controls);
-    statusBar.style.display = 'none';
   } else {
     const gameScreen = document.getElementById('screen-game')!;
+    const boardArea = el.boardContainer.parentElement!;
     side.style.display = 'none';
-    statusBar.style.display = '';
     // Move back to main flow
+    if (el.killerStats.parentElement !== gameScreen) gameScreen.insertBefore(el.killerStats, boardArea);
+    if (el.calcRow.parentElement !== gameScreen) gameScreen.appendChild(el.calcRow);
+    if (el.calcPad.parentElement !== gameScreen) gameScreen.appendChild(el.calcPad);
     if (numpad.parentElement !== gameScreen) gameScreen.appendChild(numpad);
     if (controls.parentElement !== gameScreen) {
       // Insert before numpad
@@ -483,6 +539,8 @@ function renderBoard(game: GameState): void {
   renderAllCells(game);
   updateNumpadCounts(game);
   updateMemoBtn(game);
+  updateHintCount(game);
+  updateKillerStats(game);
 }
 
 function setupCageCanvas(game: GameState, boardPx: number): void {
@@ -526,7 +584,10 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   const CAGE_BORDERS = isDark
     ? ['oklch(74% 0.15 275 / 0.68)','oklch(74% 0.17 350 / 0.68)','oklch(78% 0.16 145 / 0.68)','oklch(82% 0.14 85 / 0.68)','oklch(78% 0.12 190 / 0.68)','oklch(74% 0.16 305 / 0.68)']
     : ['oklch(58% 0.20 275 / 0.62)','oklch(62% 0.22 350 / 0.62)','oklch(70% 0.18 145 / 0.62)','oklch(78% 0.16 85 / 0.68)','oklch(72% 0.14 190 / 0.62)','oklch(63% 0.20 305 / 0.62)'];
-  const BOX_GRID = isDark ? 'oklch(96% 0.01 275 / 0.15)' : 'oklch(18% 0.01 275 / 0.13)';
+  const boxLineOpacity = nightlyModule.isActive() ? state.settings.boxLineOpacity : 0.42;
+  const BOX_GRID = isDark
+    ? `oklch(96% 0.01 275 / ${boxLineOpacity})`
+    : `oklch(18% 0.01 275 / ${boxLineOpacity})`;
 
   // Pass 1: cage fills
   cages.forEach(cage => {
@@ -853,6 +914,7 @@ function onCellSelect(idx: number): void {
   }
 
   renderAllCells(game);
+  updateKillerStats(game);
 }
 
 function onNumInput(num: number): void {
@@ -868,7 +930,7 @@ function onNumInput(num: number): void {
   undoStack.push({ cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })) });
   if (undoStack.length > 50) undoStack.shift();
 
-  const newGame = setCellValue(game, game.selectedCell, num);
+  const newGame = setCellValue(game, game.selectedCell, num, nightlyModule.isActive());
   state.game = newGame;
 
   // Animate cell
@@ -883,6 +945,7 @@ function onNumInput(num: number): void {
 
   renderAllCells(newGame);
   updateNumpadCounts(newGame);
+  updateKillerStats(newGame);
   scheduleSave(newGame);
 
   if (newGame.completed) {
@@ -903,6 +966,7 @@ function onErase(): void {
   state.game = newGame;
   renderAllCells(newGame);
   updateNumpadCounts(newGame);
+  updateKillerStats(newGame);
   scheduleSave(newGame);
 }
 
@@ -916,6 +980,8 @@ function onUndo(): void {
   state.game = { ...game, cells: prev.cells };
   renderAllCells(state.game);
   updateNumpadCounts(state.game);
+  updateHintCount(state.game);
+  updateKillerStats(state.game);
   scheduleSave(state.game);
 }
 
@@ -931,12 +997,14 @@ function onHint(): void {
   const correct = game.solution[game.selectedCell];
   // Turn off memo mode temporarily for hint
   const savedMemoMode = game.memoMode;
-  state.game = { ...game, memoMode: false };
-  const newGame = setCellValue(state.game, game.selectedCell, correct);
+  state.game = { ...game, memoMode: false, hintCount: (game.hintCount ?? 0) + 1 };
+  const newGame = setCellValue(state.game, game.selectedCell, correct, nightlyModule.isActive());
   state.game = { ...newGame, memoMode: savedMemoMode };
 
   renderAllCells(state.game);
   updateNumpadCounts(state.game);
+  updateHintCount(state.game);
+  updateKillerStats(state.game);
   scheduleSave(state.game);
 
   if (state.game.completed) showCompletion(state.game);
@@ -972,6 +1040,41 @@ function updateMemoBtn(game: GameState): void {
   el.btnMemo.classList.toggle('active', game.memoMode);
 }
 
+function updateHintCount(game: GameState): void {
+  el.hintCount.textContent = String(game.hintCount ?? 0);
+}
+
+function updateKillerStats(game: GameState): void {
+  const isKiller = nightlyModule.isActive() && state.settings.showKillerStats && game.type === 'killer' && !!game.cages;
+  el.killerStats.classList.toggle('hidden', !isKiller);
+  if (!isKiller) return;
+
+  const selected = game.selectedCell;
+  if (selected === -1) {
+    el.statCage.textContent = '-';
+    el.statRow.textContent = '-';
+    el.statCol.textContent = '-';
+    el.statBox.textContent = '-';
+    return;
+  }
+
+  const values = (positions: number[]): number => positions.reduce((sum, pos) => sum + game.cells[pos].value, 0);
+  const format = (sum: number, target: number): string => `${sum}/${target} · ${target - sum}`;
+  const row = (selected / 9) | 0;
+  const col = selected % 9;
+  const boxRow = Math.floor(row / 3) * 3;
+  const boxCol = Math.floor(col / 3) * 3;
+  const rowCells = Array.from({ length: 9 }, (_, i) => row * 9 + i);
+  const colCells = Array.from({ length: 9 }, (_, i) => i * 9 + col);
+  const boxCells = Array.from({ length: 9 }, (_, i) => (boxRow + Math.floor(i / 3)) * 9 + boxCol + (i % 3));
+  const cage = game.cages?.find(c => c.cells.includes(selected));
+
+  el.statCage.textContent = cage ? format(values(cage.cells), cage.sum) : '-';
+  el.statRow.textContent = format(values(rowCells), 45);
+  el.statCol.textContent = format(values(colCells), 45);
+  el.statBox.textContent = format(values(boxCells), 45);
+}
+
 function showCompletion(game: GameState): void {
   stopTimer();
   saveGame(null); // clear saved game
@@ -987,6 +1090,70 @@ function showCompletion(game: GameState): void {
 function scheduleSave(game: GameState): void {
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => autoSave(game), 800);
+}
+
+function onCalcButton(action: string): void {
+  if (action === 'clear') {
+    clearCalculator();
+  } else if (action === 'back') {
+    backspaceCalculator();
+  } else if (/^\d$/.test(action)) {
+    appendCalculatorDigit(action);
+  } else if (action === '+' || action === '-') {
+    applyCalculatorOperator(action);
+  }
+  renderCalculator();
+}
+
+function appendCalculatorDigit(digit: string): void {
+  if (!calcEnteringNumber) {
+    calcInputValue = '';
+    calcEnteringNumber = true;
+  }
+  calcInputValue = calcInputValue === '0' ? digit : calcInputValue + digit;
+}
+
+function applyCalculatorOperator(op: '+' | '-'): void {
+  const current = calcInputValue === '' ? calcAccumulator : Number(calcInputValue);
+  if (calcPendingOp === '+') calcAccumulator += current;
+  else if (calcPendingOp === '-') calcAccumulator -= current;
+  else calcAccumulator = current;
+
+  calcPendingOp = op;
+  calcInputValue = String(calcAccumulator);
+  calcEnteringNumber = false;
+}
+
+function backspaceCalculator(): void {
+  if (!calcEnteringNumber) {
+    clearCalculator();
+    return;
+  }
+  calcInputValue = calcInputValue.slice(0, -1);
+}
+
+function clearCalculator(): void {
+  calcAccumulator = 0;
+  calcPendingOp = null;
+  calcInputValue = '';
+  calcEnteringNumber = true;
+}
+
+function renderCalculator(): void {
+  el.calcInput.value = calcInputValue || '0';
+}
+
+function updateCalculatorVisibility(): void {
+  document.documentElement.toggleAttribute('data-calc-open', calcExpanded && nightlyModule.isActive());
+  el.btnCalc.classList.toggle('active', calcExpanded);
+  el.btnCalc.setAttribute('aria-expanded', String(calcExpanded));
+  el.calcRow.classList.toggle('collapsed', !calcExpanded);
+  el.calcPad.classList.toggle('collapsed', !calcExpanded);
+}
+
+function toggleCalculator(): void {
+  calcExpanded = !calcExpanded;
+  updateCalculatorVisibility();
 }
 
 // ── Haptics ───────────────────────────────────────────────────────────────────
@@ -1021,6 +1188,7 @@ function renderHistory(): void {
     const typeLabel = record.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
     const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[record.difficulty];
     const icon = record.completed ? '✅' : '⏸';
+    const hintText = nightlyModule.isActive() && record.completed ? ` · 힌트 ${record.hintCount ?? 0}` : '';
     const date = new Date(record.date);
     const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
 
@@ -1030,7 +1198,7 @@ function renderHistory(): void {
       <div class="history-icon">${icon}</div>
       <div class="history-info">
         <h4>${typeLabel}</h4>
-        <p>${diffLabel} · ${record.completed ? '완료' : '중단'}</p>
+        <p>${diffLabel} · ${record.completed ? '완료' : '중단'}${hintText}</p>
       </div>
       <div class="history-meta">
         <div class="history-time">${formatTime(record.elapsed)}</div>
@@ -1048,9 +1216,16 @@ function syncSettingsUI(): void {
   el.toggleHighlights.checked = s.showHighlights;
   el.toggleHaptics.checked    = s.haptics;
   el.toggleNightly.checked    = s.nightly || nightlyModule.isActive();
+  el.toggleKillerStats.checked = s.showKillerStats;
+  el.gridLineOpacity.value    = String(s.gridLineOpacity);
+  el.boxLineOpacity.value     = String(s.boxLineOpacity);
+  el.numpadLayoutBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.layout === s.numpadLayout);
+  });
   el.themeBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === s.theme);
   });
+  applyGridLineSettings();
 }
 
 function saveSettingsState(): void {
@@ -1075,6 +1250,9 @@ function onResize(): void {
 export function init(): void {
   // Apply theme
   applyTheme(state.settings.theme);
+  applyNumpadLayout(state.settings.numpadLayout);
+  applyGridLineSettings();
+  updateCalculatorVisibility();
 
   // Nightly mode – activate if saved in settings OR if ?nightly is in the URL
   const urlNightly = new URLSearchParams(location.search).has('nightly');
@@ -1082,6 +1260,7 @@ export function init(): void {
     nightlyModule.activate();
     // URL-only activation is session-scoped; don't persist it automatically
   }
+  refreshNightlyFeatures();
 
   // System theme change
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -1126,9 +1305,14 @@ export function init(): void {
   el.btnErase.addEventListener('click', onErase);
   el.btnMemo.addEventListener('click',  onToggleMemo);
   el.btnHint.addEventListener('click',  onHint);
+  el.btnCalc.addEventListener('click', toggleCalculator);
+  document.querySelectorAll<HTMLButtonElement>('[data-calc]').forEach(btn => {
+    btn.addEventListener('click', () => onCalcButton(btn.dataset.calc ?? ''));
+  });
 
   // Keyboard support
   document.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (state.screen !== 'game') return;
     const key = e.key;
     if (key >= '1' && key <= '9') { onNumInput(parseInt(key)); return; }
@@ -1145,6 +1329,7 @@ export function init(): void {
     if (next !== game.selectedCell) {
       state.game = { ...game, selectedCell: next };
       renderAllCells(state.game);
+      updateKillerStats(state.game);
     }
   });
 
@@ -1174,12 +1359,43 @@ export function init(): void {
     state.settings = { ...state.settings, haptics: el.toggleHaptics.checked };
     saveSettingsState();
   });
+  el.toggleKillerStats.addEventListener('change', () => {
+    state.settings = { ...state.settings, showKillerStats: el.toggleKillerStats.checked };
+    saveSettingsState();
+    if (state.game) updateKillerStats(state.game);
+  });
+  el.numpadLayoutBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const numpadLayout = btn.dataset.layout as NumpadLayout;
+      state.settings = { ...state.settings, numpadLayout };
+      saveSettingsState();
+      applyNumpadLayout(numpadLayout);
+      syncSettingsUI();
+    });
+  });
+  el.gridLineOpacity.addEventListener('input', () => {
+    state.settings = { ...state.settings, gridLineOpacity: Number(el.gridLineOpacity.value) };
+    applyGridLineSettings();
+  });
+  el.gridLineOpacity.addEventListener('change', () => {
+    saveSettingsState();
+  });
+  el.boxLineOpacity.addEventListener('input', () => {
+    state.settings = { ...state.settings, boxLineOpacity: Number(el.boxLineOpacity.value) };
+    applyGridLineSettings();
+    if (state.game) renderAllCells(state.game);
+    if (state.screen === 'game' && state.game?.cages) setupCageCanvas(state.game, el.boardContainer.clientWidth);
+  });
+  el.boxLineOpacity.addEventListener('change', () => {
+    saveSettingsState();
+  });
   el.toggleNightly.addEventListener('change', () => {
     const on = el.toggleNightly.checked;
     state.settings = { ...state.settings, nightly: on };
     saveSettingsState();
     if (on) nightlyModule.activate();
     else    nightlyModule.deactivate();
+    refreshNightlyFeatures();
   });
   el.themeBtns.forEach(btn => {
     btn.addEventListener('click', () => {
