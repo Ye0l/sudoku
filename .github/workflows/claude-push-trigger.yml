@@ -1,0 +1,25 @@
+name: Trigger deploy after Claude push
+
+# 이 워크플로우는 Claude가 직접 실행하는 게 아니라,
+# Claude가 푸시한 직후 repository_dispatch API를 호출하기 위한
+# 토큰 래퍼 역할을 합니다.
+#
+# 사용 방법:
+#   GitHub → Settings → Secrets → Actions 에서
+#   CLAUDE_DISPATCH_TOKEN 추가 (repo + workflow 권한이 있는 PAT)
+#
+# Claude 푸시 후 아래 API를 호출하면 deploy 워크플로우가 실행됩니다:
+#   curl -X POST \
+#     -H "Authorization: Bearer <PAT>" \
+#     -H "Accept: application/vnd.github+json" \
+#     https://api.github.com/repos/Ye0l/sudoku/dispatches \
+#     -d '{"event_type":"deploy"}'
+
+on:
+  workflow_dispatch:          # 이 워크플로우 자체를 수동으로 실행할 수도 있음
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This workflow is documentation only."
