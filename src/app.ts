@@ -10,6 +10,8 @@ import {
   startTimer, stopTimer, formatTime, getElapsed,
 } from './game.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
+import * as nightlyModule from './nightly.ts';
+
 // Worker is loaded via Vite's ?worker suffix at runtime
 const createPuzzleWorker = (): Worker =>
   new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' });
@@ -83,10 +85,11 @@ const el = {
   historyList:   document.getElementById('history-list')!,
 
   // Settings
-  toggleErrors:  document.getElementById('toggle-errors') as HTMLInputElement,
-  toggleHighlights: document.getElementById('toggle-highlights') as HTMLInputElement,
-  toggleHaptics: document.getElementById('toggle-haptics') as HTMLInputElement,
-  themeBtns:     document.querySelectorAll<HTMLButtonElement>('.theme-btn'),
+  toggleErrors:    document.getElementById('toggle-errors') as HTMLInputElement,
+  toggleHighlights:document.getElementById('toggle-highlights') as HTMLInputElement,
+  toggleHaptics:   document.getElementById('toggle-haptics') as HTMLInputElement,
+  toggleNightly:   document.getElementById('toggle-nightly') as HTMLInputElement,
+  themeBtns:       document.querySelectorAll<HTMLButtonElement>('.theme-btn'),
 };
 
 const undoStack: { cells: CellState[] }[] = [];
@@ -1041,9 +1044,10 @@ function renderHistory(): void {
 
 function syncSettingsUI(): void {
   const s = state.settings;
-  el.toggleErrors.checked    = s.showErrors;
+  el.toggleErrors.checked     = s.showErrors;
   el.toggleHighlights.checked = s.showHighlights;
-  el.toggleHaptics.checked   = s.haptics;
+  el.toggleHaptics.checked    = s.haptics;
+  el.toggleNightly.checked    = s.nightly || nightlyModule.isActive();
   el.themeBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === s.theme);
   });
@@ -1071,6 +1075,13 @@ function onResize(): void {
 export function init(): void {
   // Apply theme
   applyTheme(state.settings.theme);
+
+  // Nightly mode – activate if saved in settings OR if ?nightly is in the URL
+  const urlNightly = new URLSearchParams(location.search).has('nightly');
+  if (state.settings.nightly || urlNightly) {
+    nightlyModule.activate();
+    // URL-only activation is session-scoped; don't persist it automatically
+  }
 
   // System theme change
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -1162,6 +1173,13 @@ export function init(): void {
   el.toggleHaptics.addEventListener('change', () => {
     state.settings = { ...state.settings, haptics: el.toggleHaptics.checked };
     saveSettingsState();
+  });
+  el.toggleNightly.addEventListener('change', () => {
+    const on = el.toggleNightly.checked;
+    state.settings = { ...state.settings, nightly: on };
+    saveSettingsState();
+    if (on) nightlyModule.activate();
+    else    nightlyModule.deactivate();
   });
   el.themeBtns.forEach(btn => {
     btn.addEventListener('click', () => {

@@ -1,4 +1,59 @@
 /* ============================================================
+   Nightly mode – amber accent overrides
+   data-nightly attribute is set on <html> by nightly.ts
+   ============================================================ */
+[data-nightly] {
+  --accent:       oklch(72% 0.22 65);
+  --accent-2:     oklch(62% 0.18 65);
+  --accent-bg:    oklch(97% 0.05 65);
+  --accent-light: oklch(72% 0.22 65 / 0.13);
+}
+[data-nightly][data-theme="dark"] {
+  --accent:       oklch(80% 0.18 65);
+  --accent-2:     oklch(70% 0.14 65);
+  --accent-bg:    oklch(26% 0.09 65);
+  --accent-light: oklch(80% 0.18 65 / 0.16);
+}
+
+/* Nightly floating badge */
+.nightly-badge {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+  right: 10px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-light);
+  pointer-events: none;
+  opacity: 0.9;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.10em;
+  color: var(--accent);
+  user-select: none;
+}
+
+.nightly-badge-star {
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Nightly toggle – uses amber when checked */
+.settings-item-nightly .toggle-slider-nightly {
+  background: var(--border);
+}
+.settings-item-nightly input:checked + .toggle-slider-nightly {
+  background: oklch(72% 0.22 65);
+}
+[data-theme="dark"] .settings-item-nightly input:checked + .toggle-slider-nightly {
+  background: oklch(80% 0.18 65);
+}
+
+/* ============================================================
    CSS Custom Properties – Themes
    ============================================================ */
 :root {

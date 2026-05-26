@@ -53,6 +53,7 @@ export interface AppSettings {
   showHighlights: boolean;
   haptics: boolean;
   autoAdvance: boolean;
+  nightly: boolean;
 }
 
 export interface AppState {
@@ -68,4 +69,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHighlights: true,
   haptics: true,
   autoAdvance: false,
+  nightly: false,
 };
