@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:        # GitHub UI에서 수동 실행
+  repository_dispatch:      # Claude 등 외부 트리거 (event_type: deploy)
+    types: [deploy]
 
 permissions:
   contents: read
@@ -19,6 +22,8 @@ jobs:
     steps:
       - name: Check out sudoku
         uses: actions/checkout@v4
+        with:
+          ref: main          # repository_dispatch는 ref가 없으면 기본 브랜치 사용
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -55,5 +60,5 @@ jobs:
             echo "No changes to deploy."
             exit 0
           fi
-          git commit -m "Deploy sudoku from Ye0l/sudoku@${GITHUB_SHA}"
+          git commit -m "Deploy sudoku from Ye0l/sudoku@${GITHUB_SHA:-manual}"
           git push origin main
