@@ -7,7 +7,7 @@ import {
   startTimer, stopTimer, formatTime, getElapsed,
 } from './game.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
-import { computeCageBorders } from './engine/killer.ts';
+import { computeCageBorders, type Cage } from './engine/killer.ts';
 
 const createPuzzleWorker = (): Worker =>
   new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' });
@@ -350,44 +350,74 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
 
   document.querySelectorAll('.cage-sum-label').forEach(e => e.remove());
 
-  const ctx    = canvas.getContext('2d')!;
+  const ctx     = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, boardPx, boardPx);
 
   const borders = cageBordersCache!;
   const cages   = game.cages!;
   const isDark  = document.documentElement.getAttribute('data-theme') === 'dark';
 
-  const CAGE_COLORS = isDark
-    ? ['rgba(129,140,248,0.55)','rgba(244,114,182,0.55)','rgba(74,222,128,0.55)','rgba(251,191,36,0.55)','rgba(45,212,191,0.55)','rgba(192,132,252,0.55)']
-    : ['rgba(99,102,241,0.6)','rgba(236,72,153,0.6)','rgba(34,197,94,0.6)','rgba(245,158,11,0.6)','rgba(20,184,166,0.6)','rgba(168,85,247,0.6)'];
   const CAGE_FILLS = isDark
-    ? ['rgba(129,140,248,0.10)','rgba(244,114,182,0.10)','rgba(74,222,128,0.10)','rgba(251,191,36,0.10)','rgba(45,212,191,0.10)','rgba(192,132,252,0.10)']
-    : ['rgba(99,102,241,0.06)','rgba(236,72,153,0.06)','rgba(34,197,94,0.06)','rgba(245,158,11,0.06)','rgba(20,184,166,0.06)','rgba(168,85,247,0.06)'];
+    ? ['rgba(110,125,240,0.17)','rgba(225,100,160,0.17)','rgba(80,215,120,0.17)','rgba(230,195,60,0.17)','rgba(65,220,205,0.17)','rgba(150,105,240,0.17)']
+    : ['rgba(70,80,210,0.14)','rgba(200,50,130,0.14)','rgba(30,175,90,0.14)','rgba(200,165,20,0.14)','rgba(20,170,155,0.14)','rgba(110,45,210,0.14)'];
 
+  const CAGE_BORDERS = isDark
+    ? ['rgba(110,125,240,0.65)','rgba(225,100,160,0.65)','rgba(80,215,120,0.65)','rgba(230,195,60,0.65)','rgba(65,220,205,0.65)','rgba(150,105,240,0.65)']
+    : ['rgba(70,80,210,0.55)','rgba(200,50,130,0.55)','rgba(30,175,90,0.55)','rgba(200,165,20,0.55)','rgba(20,170,155,0.55)','rgba(110,45,210,0.55)'];
+
+  const CAGE_INNER = isDark
+    ? ['rgba(110,125,240,0.10)','rgba(225,100,160,0.10)','rgba(80,215,120,0.10)','rgba(230,195,60,0.10)','rgba(65,220,205,0.10)','rgba(150,105,240,0.10)']
+    : ['rgba(70,80,210,0.08)','rgba(200,50,130,0.08)','rgba(30,175,90,0.08)','rgba(200,165,20,0.08)','rgba(20,170,155,0.08)','rgba(110,45,210,0.08)'];
+
+  const cageById = new Map<number, Cage>(cages.map(c => [c.id, c]));
+
+  // Pass 1: cage fills
   cages.forEach(cage => {
     ctx.fillStyle = CAGE_FILLS[cage.colorIndex];
     cage.cells.forEach(pos => {
       const r = (pos / 9) | 0, c = pos % 9;
-      ctx.fillRect(c * cellSize + 2, r * cellSize + 2, cellSize - 4, cellSize - 4);
+      ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
     });
   });
 
-  ctx.lineCap = 'round';
-  ctx.setLineDash([3, 2]);
-  ctx.lineWidth = 1.5;
-
-  borders.forEach((b, pos) => {
-    const r = (pos / 9) | 0, c = pos % 9;
-    const x = c * cellSize, y = r * cellSize;
-    const cage = cages[b.cageId];
-    if (!cage) return;
-
-    ctx.strokeStyle = CAGE_COLORS[cage.colorIndex];
+  // Pass 2: inner cell separators (blurred, faint)
+  ctx.save();
+  ctx.filter = 'blur(1.5px)';
+  ctx.setLineDash([]);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 1;
+  for (let pos = 0; pos < 81; pos++) {
+    const b = borders[pos];
+    const cage = cageById.get(b.cageId);
+    if (!cage) continue;
+    const row = (pos / 9) | 0, col = pos % 9;
+    const x = col * cellSize, y = row * cellSize;
+    ctx.strokeStyle = CAGE_INNER[cage.colorIndex];
     ctx.beginPath();
-    if (b.top)    { ctx.moveTo(x + 3,           y + 1.5);           ctx.lineTo(x + cellSize - 3, y + 1.5); }
-    if (b.bottom) { ctx.moveTo(x + 3,           y + cellSize - 1.5); ctx.lineTo(x + cellSize - 3, y + cellSize - 1.5); }
-    if (b.left)   { ctx.moveTo(x + 1.5,         y + 3);             ctx.lineTo(x + 1.5,           y + cellSize - 3); }
-    if (b.right)  { ctx.moveTo(x + cellSize - 1.5, y + 3);          ctx.lineTo(x + cellSize - 1.5, y + cellSize - 3); }
+    if (!b.top  && row > 0) { ctx.moveTo(x, y); ctx.lineTo(x + cellSize, y); }
+    if (!b.left && col > 0) { ctx.moveTo(x, y); ctx.lineTo(x, y + cellSize); }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Pass 3: cage boundary lines – solid, distinct
+  ctx.setLineDash([]);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 2;
+  const H = 1;
+  for (let pos = 0; pos < 81; pos++) {
+    const b = borders[pos];
+    const cage = cageById.get(b.cageId);
+    if (!cage) continue;
+    const row = (pos / 9) | 0, col = pos % 9;
+    const x = col * cellSize, y = row * cellSize;
+
+    ctx.strokeStyle = CAGE_BORDERS[cage.colorIndex];
+    ctx.beginPath();
+    if (b.top)                  { ctx.moveTo(x,              y + H);            ctx.lineTo(x + cellSize, y + H); }
+    if (b.left)                 { ctx.moveTo(x + H,          y);                ctx.lineTo(x + H,        y + cellSize); }
+    if (b.bottom && row === 8)  { ctx.moveTo(x,              y + cellSize - H); ctx.lineTo(x + cellSize, y + cellSize - H); }
+    if (b.right  && col === 8)  { ctx.moveTo(x + cellSize - H, y);              ctx.lineTo(x + cellSize - H, y + cellSize); }
     ctx.stroke();
 
     if (b.isTopLeft) {
@@ -398,7 +428,7 @@ function setupCageCanvas(game: GameState, boardPx: number, cellSize: number): vo
       label.style.top  = (y + 3) + 'px';
       el.boardContainer.appendChild(label);
     }
-  });
+  }
 }
 
 function renderAllCells(game: GameState): void {
