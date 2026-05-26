@@ -7,7 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Sudoku" />
-  <meta name="theme-color" content="#6366f1" />
+  <meta name="theme-color" content="#6366f1" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f0f1a" media="(prefers-color-scheme: dark)" />
   <meta name="description" content="스도쿠 & 킬러 스도쿠 퍼즐 게임" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <title>Sudoku</title>
@@ -215,6 +216,7 @@
       <div id="complete-overlay" class="complete-overlay">
         <div class="complete-icon">🎉</div>
         <div class="complete-title">완료!</div>
+        <div class="complete-game-label" id="complete-game-label"></div>
         <div class="complete-time" id="complete-time">00:00</div>
         <div class="complete-subtitle">퍼즐을 해결했습니다</div>
         <div class="complete-actions">
@@ -313,6 +315,19 @@
             <h4>버전</h4>
             <p>Sudoku PWA 1.0.0</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm bottom sheet (reusable) -->
+    <div id="confirm-backdrop" class="confirm-backdrop">
+      <div class="confirm-sheet">
+        <div class="confirm-handle"></div>
+        <div class="confirm-title" id="confirm-title"></div>
+        <div class="confirm-msg"   id="confirm-msg"></div>
+        <div class="confirm-actions">
+          <button class="confirm-btn cancel"  id="confirm-cancel">취소</button>
+          <button class="confirm-btn danger"  id="confirm-ok">확인</button>
         </div>
       </div>
     </div>

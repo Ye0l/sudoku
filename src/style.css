@@ -18,8 +18,8 @@
   --danger-bg:    rgba(239,68,68,0.10);
   --success:      #22c55e;
   --border:       oklch(22% 0.02 275 / 0.10);
-  --border-strong:oklch(22% 0.02 275 / 0.25);
-  --box-border:   oklch(22% 0.02 275 / 0.15);
+  --border-strong:oklch(22% 0.02 275 / 0.12);
+  --box-border:   oklch(18% 0.02 275 / 0.42);
   --shadow:       0 2px 16px rgba(0,0,0,0.08);
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.14);
   --radius:       12px;
@@ -67,8 +67,8 @@
   --danger-bg:    rgba(248,113,113,0.12);
   --success:      #4ade80;
   --border:       oklch(94% 0.02 275 / 0.08);
-  --border-strong:oklch(94% 0.02 275 / 0.20);
-  --box-border:   oklch(94% 0.02 275 / 0.13);
+  --border-strong:oklch(94% 0.02 275 / 0.12);
+  --box-border:   oklch(92% 0.02 275 / 0.40);
   --shadow:       0 2px 16px rgba(0,0,0,0.4);
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.6);
 
@@ -515,9 +515,12 @@ body {
   z-index: 2;
 }
 
-/* Box border helpers */
-.cell.box-border-right  { border-right:  1px solid var(--box-border); }
-.cell.box-border-bottom { border-bottom: 1px solid var(--box-border); }
+/* Box border helpers – 2 px gives the thick-line look of a real sudoku board */
+.cell.box-border-right  { box-shadow: inset -2px 0 0 var(--box-border); }
+.cell.box-border-bottom { box-shadow: inset  0 -2px 0 var(--box-border); }
+.cell.box-border-right.box-border-bottom {
+  box-shadow: inset -2px 0 0 var(--box-border), inset 0 -2px 0 var(--box-border);
+}
 
 /* Highlight states */
 .cell.hl-selected  { background: var(--cell-selected) !important; }
@@ -776,6 +779,15 @@ body {
   font-size: 18px;
   font-weight: 700;
   color: var(--accent);
+}
+
+.complete-game-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: -4px;
 }
 
 .complete-subtitle {
@@ -1146,6 +1158,89 @@ body {
     gap: 8px;
   }
 }
+
+/* ============================================================
+   Confirm Bottom Sheet
+   ============================================================ */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s;
+}
+
+.confirm-backdrop.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.confirm-sheet {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: var(--bg-surface);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%);
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+
+.confirm-backdrop.visible .confirm-sheet {
+  transform: translateY(0);
+}
+
+.confirm-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  margin: 0 auto 16px;
+}
+
+.confirm-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.confirm-msg {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.confirm-btn.danger {
+  background: var(--danger);
+  color: white;
+}
+
+.confirm-btn.cancel {
+  background: var(--bg-surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.confirm-btn:active { transform: scale(0.96); }
 
 /* ============================================================
    Scrollbar (hidden but functional)

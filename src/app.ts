@@ -1,9 +1,9 @@
 // Main application controller
 
-import type { AppState, GameState, GameType, Difficulty, Screen, Theme, CellState, CachedPuzzle } from './types.ts';
+import type { AppState, GameState, GameType, Difficulty, Screen, Theme, CellState, CachedPuzzle, HistoryRecord } from './types.ts';
 import {
   loadGame, saveGame, loadHistory, loadSettings, saveSettings, clearHistory,
-  takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles,
+  takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, addHistory,
 } from './storage.ts';
 import {
   createGame, setCellValue, eraseCellValue, autoSave,
@@ -28,6 +28,7 @@ let selectedDiff: Difficulty = 'easy';
 let pendingWorker: Worker | null = null;
 const cacheFillInProgress = new Set<string>();
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let confirmResolver: ((ok: boolean) => void) | null = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,15 @@ const el = {
   sideTimer:     document.getElementById('side-timer'),
 
   // Numpad
-  numBtns:       document.querySelectorAll<HTMLButtonElement>('.num-btn'),
+  numBtns:        document.querySelectorAll<HTMLButtonElement>('.num-btn'),
+  completeGameLabel: document.getElementById('complete-game-label')!,
+
+  // Confirm dialog
+  confirmBackdrop: document.getElementById('confirm-backdrop')!,
+  confirmTitle:   document.getElementById('confirm-title')!,
+  confirmMsg:     document.getElementById('confirm-msg')!,
+  confirmOk:      document.getElementById('confirm-ok')!,
+  confirmCancel:  document.getElementById('confirm-cancel')!,
 
   // Controls
   btnUndo:       document.getElementById('btn-undo')!,
@@ -108,13 +117,18 @@ function navigate(to: Screen, direction: 'forward' | 'back' | 'fade' = 'forward'
       toEl.classList.remove(enterClass);
       fromEl.classList.add(exitClass);
 
+      let done = false;
       const cleanup = () => {
+        if (done) return;
+        done = true;
         fromEl.classList.remove(exitClass);
         fromEl.classList.add('hidden');
         state.screen = to;
         onScreenEnter(to);
       };
+      // transitionend may not fire if CSS transitions are disabled or very fast
       toEl.addEventListener('transitionend', cleanup, { once: true });
+      setTimeout(cleanup, 400);
     });
   });
 }
@@ -140,6 +154,39 @@ function openSettings(): void {
 
 function closeSettings(): void {
   navigate(settingsReturnScreen, settingsReturnScreen === 'game' ? 'fade' : 'back');
+}
+
+// ── Custom confirm dialog ─────────────────────────────────────────────────────
+
+function showConfirm(title: string, msg: string): Promise<boolean> {
+  el.confirmTitle.textContent = title;
+  el.confirmMsg.textContent   = msg;
+  el.confirmBackdrop.classList.add('visible');
+  return new Promise<boolean>(resolve => {
+    confirmResolver = resolve;
+  });
+}
+
+function resolveConfirm(ok: boolean): void {
+  el.confirmBackdrop.classList.remove('visible');
+  confirmResolver?.(ok);
+  confirmResolver = null;
+}
+
+// ── Abandoned game helper ─────────────────────────────────────────────────────
+
+function recordAbandonedGame(game: GameState): void {
+  if (game.completed) return;
+  const record: HistoryRecord = {
+    id: game.id,
+    type: game.type,
+    difficulty: game.difficulty,
+    completed: false,
+    elapsed: getElapsed(game),
+    date: Date.now(),
+    moves: 0,
+  };
+  addHistory(record);
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -278,6 +325,11 @@ function generatePuzzle(type: GameType, diff: Difficulty): Promise<GameState> {
 // ── Game start / resume ───────────────────────────────────────────────────────
 
 async function startNewGame(): Promise<void> {
+  // If there is an unfinished game, record it as abandoned before replacing it
+  if (state.game && !state.game.completed) {
+    recordAbandonedGame(state.game);
+  }
+
   undoStack.length = 0;
 
   // Set temporary header before puzzle is ready
@@ -921,9 +973,11 @@ function showCompletion(game: GameState): void {
   stopTimer();
   saveGame(null); // clear saved game
 
-  const overlay = el.completeOverlay;
+  const typeLabel = game.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
+  const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[game.difficulty];
+  el.completeGameLabel.textContent = `${typeLabel} · ${diffLabel}`;
   el.completeTime.textContent = formatTime(game.elapsed);
-  overlay.classList.add('visible');
+  el.completeOverlay.classList.add('visible');
   haptic('success');
 }
 
@@ -1030,7 +1084,10 @@ export function init(): void {
   document.getElementById('back-from-settings')?.addEventListener('click', closeSettings);
   document.getElementById('back-from-game')?.addEventListener('click', () => {
     stopTimer();
-    if (state.game) autoSave(state.game);
+    if (state.game && !state.game.completed) {
+      autoSave(state.game);
+      recordAbandonedGame(state.game);
+    }
     navigate('menu', 'back');
   });
   document.getElementById('game-settings-btn')?.addEventListener('click', openSettings);
@@ -1123,10 +1180,9 @@ export function init(): void {
 
   // History clear
   document.getElementById('clear-history-btn')?.addEventListener('click', () => {
-    if (confirm('플레이 기록을 모두 삭제하시겠습니까?')) {
-      clearHistory();
-      renderHistory();
-    }
+    void showConfirm('기록 삭제', '플레이 기록을 모두 삭제하시겠습니까?').then(ok => {
+      if (ok) { clearHistory(); renderHistory(); }
+    });
   });
 
   // Resize
@@ -1137,6 +1193,39 @@ export function init(): void {
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('gesturechange', (e) => e.preventDefault());
+
+  // Confirm dialog buttons
+  el.confirmOk.addEventListener('click',     () => resolveConfirm(true));
+  el.confirmCancel.addEventListener('click', () => resolveConfirm(false));
+  el.confirmBackdrop.addEventListener('click', (e) => {
+    if (e.target === el.confirmBackdrop) resolveConfirm(false);
+  });
+
+  // PWA / Android back-button support
+  history.replaceState({ page: 'menu' }, '');
+  window.addEventListener('popstate', () => {
+    history.pushState({ page: state.screen }, '');
+    // Close confirm dialog first if open
+    if (confirmResolver) { resolveConfirm(false); return; }
+    // Complete overlay
+    if (el.completeOverlay.classList.contains('visible')) {
+      el.completeOverlay.classList.remove('visible');
+      navigate('menu', 'back');
+      return;
+    }
+    if (state.screen === 'game') {
+      stopTimer();
+      if (state.game && !state.game.completed) {
+        autoSave(state.game);
+        recordAbandonedGame(state.game);
+      }
+      navigate('menu', 'back');
+    } else if (state.screen === 'settings') {
+      closeSettings();
+    } else if (state.screen === 'history') {
+      navigate('menu', 'back');
+    }
+  });
 
   // Initial state
   selectType('classic');
