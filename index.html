@@ -157,9 +157,11 @@
       <!-- Board area -->
       <div class="board-area">
         <div id="board-container" class="board-container">
+          <canvas id="board-canvas" class="board-canvas"></canvas>
           <div id="board-grid" class="board-grid"></div>
           <canvas id="cage-canvas" class="cage-canvas" style="display:none;"></canvas>
           <canvas id="cage-line-canvas" class="cage-line-canvas" style="display:none;"></canvas>
+          <canvas id="sum-canvas" class="sum-canvas"></canvas>
         </div>
       </div>
 
@@ -362,11 +364,11 @@
           <div class="grid-line-settings">
             <label>
               <span>9×9</span>
-              <input type="range" id="grid-line-opacity" min="0.04" max="0.36" step="0.01" />
+              <input type="range" id="grid-line-opacity" min="0" max="0.36" step="0.01" />
             </label>
             <label>
               <span>3×3</span>
-              <input type="range" id="box-line-opacity" min="0.12" max="0.72" step="0.01" />
+              <input type="range" id="box-line-opacity" min="0" max="0.72" step="0.01" />
             </label>
             <div class="grid-line-preview" id="grid-line-preview" aria-hidden="true">
               <span></span><span></span><span></span>

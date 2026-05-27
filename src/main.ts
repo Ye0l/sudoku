@@ -8,7 +8,7 @@ const updateSW = registerSW({
     if (!registration) return;
 
     setInterval(() => {
-      void registration.update();
+      if (navigator.onLine) void registration.update();
     }, 60 * 1000);
   },
   onNeedRefresh() {

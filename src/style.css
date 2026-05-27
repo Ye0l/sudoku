@@ -15,17 +15,12 @@
   --accent-light: oklch(80% 0.18 65 / 0.16);
 }
 
-/* Nightly bottom marker */
-.nightly-badge {
+/* Nightly screen frame */
+.nightly-frame {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 9999;
-  height: max(2px, env(safe-area-inset-bottom, 0px));
-  background: var(--accent);
   pointer-events: none;
-  opacity: 0.85;
 }
 
 .nightly-only {
@@ -303,6 +298,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
 }
 
 .menu-logo {
@@ -592,20 +588,45 @@ body {
 }
 
 .board-grid {
+  position: absolute;
+  left: var(--board-pad, 0px);
+  top: var(--board-pad, 0px);
+  z-index: 10;
   display: grid;
   grid-template-columns: repeat(9, 1fr);
   grid-template-rows: repeat(9, 1fr);
   width: 100%;
   height: 100%;
-  background: var(--grid-line);
-  gap: 1px;
-  border: 2px solid var(--grid-line);
+  width: calc(100% - var(--board-pad, 0px) * 2);
+  height: calc(100% - var(--board-pad, 0px) * 2);
+  background: transparent;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.board-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
   border-radius: 4px;
-  overflow: hidden;
+  pointer-events: none;
+}
+
+.sum-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .cell {
-  background: var(--cell-bg);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -616,9 +637,18 @@ body {
   /* Box borders added via JS classes */
 }
 
+.board-grid .cell > * {
+  display: none;
+}
+
 .cell:active {
   transform: scale(0.93);
   z-index: 2;
+}
+
+.board-grid .cell:active {
+  transform: none;
+  z-index: auto;
 }
 
 /* Box border helpers – 2 px gives the thick-line look of a real sudoku board */
@@ -628,11 +658,28 @@ body {
   box-shadow: inset -2px 0 0 var(--box-border), inset 0 -2px 0 var(--box-border);
 }
 
+.board-grid .cell.box-border-right,
+.board-grid .cell.box-border-bottom,
+.board-grid .cell.box-border-right.box-border-bottom {
+  box-shadow: none;
+}
+
 /* Highlight states */
 .cell.hl-selected  { background: var(--cell-selected) !important; }
 .cell.hl-peer      { background: var(--cell-peer); }
 .cell.hl-sameval   { background: var(--cell-sameval); }
 .cell.hl-error     { background: var(--cell-error-bg); }
+
+.board-grid .cell,
+.board-grid .cell.hl-selected,
+.board-grid .cell.hl-peer,
+.board-grid .cell.hl-sameval,
+.board-grid .cell.hl-error,
+.board-grid .cell.given,
+.board-grid .cell.user,
+.board-grid .cell.error {
+  background: transparent !important;
+}
 
 .cell-value {
   font-size: calc(var(--cell-size, 38px) * 0.52);
@@ -698,6 +745,11 @@ body {
   text-align: left;
   pointer-events: none;
   z-index: 5;
+}
+
+.cage-sum-label.active {
+  color: var(--accent);
+  font-weight: 900;
 }
 
 /* ============================================================
@@ -1179,6 +1231,7 @@ body {
 
 .settings-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 16px;
@@ -1348,7 +1401,8 @@ body {
 }
 
 .grid-line-preview {
-  grid-row: span 2;
+  grid-column: 2;
+  grid-row: 1 / span 2;
   width: 66px;
   height: 66px;
   display: grid;
@@ -1411,17 +1465,30 @@ body {
    Responsive – Landscape / large screens
    ============================================================ */
 @media (min-width: 600px) and (orientation: landscape) {
-  #screen-game {
-    flex-direction: row;
+  #screen-game:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    grid-template-rows: 52px minmax(0, 1fr);
+  }
+
+  #screen-game > .nav-header {
+    grid-column: 1 / -1;
+    grid-row: 1;
   }
 
   .board-area {
-    flex: 1;
+    grid-column: 1;
+    grid-row: 2;
     padding: 12px;
+    min-width: 0;
+    min-height: 0;
   }
 
   .game-side {
+    grid-column: 2;
+    grid-row: 2;
     width: 220px;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-surface);
@@ -1451,6 +1518,7 @@ body {
     grid-template-columns: repeat(3, 1fr);
     gap: 6px;
     padding: 8px;
+    max-height: none;
   }
 
   .line-calc-pad {
@@ -1477,6 +1545,21 @@ body {
     justify-content: flex-start;
     gap: 10px;
     padding: 10px 12px;
+  }
+}
+
+@media (min-width: 900px) {
+  .menu-scroll,
+  .settings-list,
+  .history-list {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .clear-history-btn {
+    width: min(720px, calc(100% - 24px));
+    margin-left: auto;
+    margin-right: auto;
   }
 }
 

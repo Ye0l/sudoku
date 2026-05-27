@@ -18,6 +18,7 @@
  */
 
 let _active = false;
+let frameResizeHandler: (() => void) | null = null;
 
 /** Returns true while nightly mode is running. */
 export function isActive(): boolean {
@@ -52,7 +53,11 @@ export function deactivate(): void {
   _active = false;
 
   document.documentElement.removeAttribute('data-nightly');
-  document.getElementById('nightly-badge')?.remove();
+  document.getElementById('nightly-frame')?.remove();
+  if (frameResizeHandler) {
+    window.removeEventListener('resize', frameResizeHandler);
+    frameResizeHandler = null;
+  }
 
   // ── Tear down experimental features ─────────────────────────────────────
   console.info('[Nightly] mode deactivated');
@@ -61,11 +66,51 @@ export function deactivate(): void {
 // ── Internal helpers ───────────────────────────────────────────────────────
 
 function showBadge(): void {
-  if (document.getElementById('nightly-badge')) return;
+  if (document.getElementById('nightly-frame')) return;
 
-  const badge = document.createElement('div');
-  badge.id = 'nightly-badge';
-  badge.className = 'nightly-badge';
-  badge.setAttribute('aria-hidden', 'true');
-  document.getElementById('app')?.appendChild(badge);
+  const canvas = document.createElement('canvas');
+  canvas.id = 'nightly-frame';
+  canvas.className = 'nightly-frame';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.getElementById('app')?.appendChild(canvas);
+
+  const draw = (): void => {
+    const dpr = window.devicePixelRatio || 1;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const color = isDark ? 'rgba(251,191,36,0.82)' : 'rgba(217,119,6,0.78)';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const r = 20;
+
+    // Fill only the corner areas outside the rounded rect using evenodd clip
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.roundRect(0.75, 0.75, width - 1.5, height - 1.5, r);
+    ctx.clip('evenodd');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+
+    // Border stroke
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(0.75, 0.75, width - 1.5, height - 1.5, r);
+    ctx.stroke();
+  };
+
+  draw();
+  frameResizeHandler = draw;
+  window.addEventListener('resize', draw, { passive: true });
 }

@@ -58,6 +58,8 @@ const el = {
   timer:         document.getElementById('timer')!,
   gameInfo:      document.getElementById('game-info')!,
   boardGrid:     document.getElementById('board-grid')!,
+  boardCanvas:   document.getElementById('board-canvas') as HTMLCanvasElement,
+  sumCanvas:     document.getElementById('sum-canvas') as HTMLCanvasElement,
   boardContainer:document.getElementById('board-container')!,
   cageCanvas:    document.getElementById('cage-canvas') as HTMLCanvasElement,
   cageLineCanvas:document.getElementById('cage-line-canvas') as HTMLCanvasElement,
@@ -114,6 +116,30 @@ const el = {
 
 const undoStack: { cells: CellState[] }[] = [];
 let settingsReturnScreen: Exclude<Screen, 'settings'> = 'menu';
+
+type SelectionSnapshot = {
+  selected: number;
+  row: number;
+  col: number;
+  boxRow: number;
+  boxCol: number;
+  rowText: string;
+  colText: string;
+  boxText: string;
+};
+
+type SelectionTransition = {
+  from: SelectionSnapshot | null;
+  to: SelectionSnapshot | null;
+  start: number;
+};
+
+const SELECTION_TRANSITION_MS = 160;
+let lastSelectionSnapshot: SelectionSnapshot | null = null;
+let selectionTransition: SelectionTransition | null = null;
+let selectionTransitionRaf: number | null = null;
+let cageAnimRafId: number | null = null;
+const CAGE_ANIM_EPOCH = performance.now();
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
@@ -498,11 +524,18 @@ function renderBoard(game: GameState): void {
   const area     = el.boardGrid.parentElement!.parentElement!;
   const maxSize  = Math.min(area.clientWidth - 16, area.clientHeight - 16) - 4;
   const size     = Math.max(200, maxSize);
-  const cellSize = Math.floor(size / 9);
+  const boardPad = Math.max(12, Math.floor(size * 0.028));
+  const cellSize = Math.floor((size - boardPad * 2) / 9);
   const boardPx  = cellSize * 9;
+  const canvasPx = boardPx + boardPad * 2;
 
-  container.style.width  = boardPx + 'px';
-  container.style.height = boardPx + 'px';
+  container.style.width  = canvasPx + 'px';
+  container.style.height = canvasPx + 'px';
+  container.style.setProperty('--board-pad', boardPad + 'px');
+  el.boardCanvas.style.width = canvasPx + 'px';
+  el.boardCanvas.style.height = canvasPx + 'px';
+  el.sumCanvas.style.width = canvasPx + 'px';
+  el.sumCanvas.style.height = canvasPx + 'px';
   document.documentElement.style.setProperty('--cell-size', cellSize + 'px');
 
   // Build cells
@@ -544,21 +577,25 @@ function renderBoard(game: GameState): void {
 }
 
 function setupCageCanvas(game: GameState, boardPx: number): void {
+  if (cageAnimRafId !== null) {
+    cancelAnimationFrame(cageAnimRafId);
+    cageAnimRafId = null;
+  }
+
   const canvas = el.cageCanvas;
   const lineCanvas = el.cageLineCanvas;
-  const canvasPad = 0;
+  const canvasPad = parseFloat(el.boardContainer.style.getPropertyValue('--board-pad')) || 0;
   const canvasPx = boardPx + canvasPad * 2;
-  const gridStyle = getComputedStyle(el.boardGrid);
-  const gridBorder = parseFloat(gridStyle.borderLeftWidth) || 0;
-  const gridGap = parseFloat(gridStyle.columnGap) || 0;
-  const cellTrack = (boardPx - gridBorder * 2 - gridGap * 8) / 9;
+  const gridBorder = 0;
+  const gridGap = 0;
+  const cellTrack = boardPx / 9;
   const dpr = window.devicePixelRatio || 1;
   [canvas, lineCanvas].forEach(c => {
     c.style.display = 'block';
     c.width  = Math.round(canvasPx * dpr);
     c.height = Math.round(canvasPx * dpr);
-    c.style.left = -canvasPad + 'px';
-    c.style.top = -canvasPad + 'px';
+    c.style.left = '0px';
+    c.style.top = '0px';
     c.style.right = 'auto';
     c.style.bottom = 'auto';
     c.style.width  = canvasPx + 'px';
@@ -578,16 +615,22 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   const isDark  = document.documentElement.getAttribute('data-theme') === 'dark';
 
   const CAGE_FILLS = isDark
-    ? ['oklch(74% 0.15 275 / 0.12)','oklch(74% 0.17 350 / 0.12)','oklch(78% 0.16 145 / 0.12)','oklch(82% 0.14 85 / 0.12)','oklch(78% 0.12 190 / 0.12)','oklch(74% 0.16 305 / 0.12)']
-    : ['oklch(58% 0.20 275 / 0.16)','oklch(62% 0.22 350 / 0.16)','oklch(70% 0.18 145 / 0.16)','oklch(78% 0.16 85 / 0.16)','oklch(72% 0.14 190 / 0.16)','oklch(63% 0.20 305 / 0.16)'];
+    ? ['rgba(129,140,248,0.12)','rgba(244,114,182,0.12)','rgba(74,222,128,0.12)','rgba(251,191,36,0.12)','rgba(45,212,191,0.12)','rgba(192,132,252,0.12)']
+    : ['rgba(99,102,241,0.16)','rgba(236,72,153,0.16)','rgba(34,197,94,0.16)','rgba(245,158,11,0.16)','rgba(20,184,166,0.16)','rgba(168,85,247,0.16)'];
 
   const CAGE_BORDERS = isDark
-    ? ['oklch(74% 0.15 275 / 0.68)','oklch(74% 0.17 350 / 0.68)','oklch(78% 0.16 145 / 0.68)','oklch(82% 0.14 85 / 0.68)','oklch(78% 0.12 190 / 0.68)','oklch(74% 0.16 305 / 0.68)']
-    : ['oklch(58% 0.20 275 / 0.62)','oklch(62% 0.22 350 / 0.62)','oklch(70% 0.18 145 / 0.62)','oklch(78% 0.16 85 / 0.68)','oklch(72% 0.14 190 / 0.62)','oklch(63% 0.20 305 / 0.62)'];
+    ? ['rgba(129,140,248,0.68)','rgba(244,114,182,0.68)','rgba(74,222,128,0.68)','rgba(251,191,36,0.68)','rgba(45,212,191,0.68)','rgba(192,132,252,0.68)']
+    : ['rgba(99,102,241,0.62)','rgba(236,72,153,0.62)','rgba(34,197,94,0.62)','rgba(245,158,11,0.68)','rgba(20,184,166,0.62)','rgba(168,85,247,0.62)'];
+  const CAGE_BORDERS_SELECTED = isDark
+    ? ['rgba(129,140,248,1)','rgba(244,114,182,1)','rgba(74,222,128,1)','rgba(251,191,36,1)','rgba(45,212,191,1)','rgba(192,132,252,1)']
+    : ['rgba(79,82,221,1)','rgba(210,44,140,1)','rgba(22,163,74,1)','rgba(217,119,6,1)','rgba(13,148,136,1)','rgba(147,51,234,1)'];
+  const CAGE_FILLS_SELECTED = isDark
+    ? ['rgba(129,140,248,0.28)','rgba(244,114,182,0.28)','rgba(74,222,128,0.28)','rgba(251,191,36,0.28)','rgba(45,212,191,0.28)','rgba(192,132,252,0.28)']
+    : ['rgba(99,102,241,0.30)','rgba(236,72,153,0.30)','rgba(34,197,94,0.30)','rgba(245,158,11,0.30)','rgba(20,184,166,0.30)','rgba(168,85,247,0.30)'];
   const boxLineOpacity = nightlyModule.isActive() ? state.settings.boxLineOpacity : 0.42;
   const BOX_GRID = isDark
-    ? `oklch(96% 0.01 275 / ${boxLineOpacity})`
-    : `oklch(18% 0.01 275 / ${boxLineOpacity})`;
+    ? `rgba(244,245,255,${boxLineOpacity})`
+    : `rgba(26,27,46,${boxLineOpacity})`;
 
   // Pass 1: cage fills
   cages.forEach(cage => {
@@ -603,6 +646,22 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
       );
     });
   });
+
+  // Boost selected cage fill on top of the base fill
+  const selectedCageForFill = game.selectedCell === -1 ? undefined : cages.find(cage => cage.cells.includes(game.selectedCell));
+  if (selectedCageForFill) {
+    ctx.fillStyle = CAGE_FILLS_SELECTED[selectedCageForFill.colorIndex];
+    selectedCageForFill.cells.forEach(pos => {
+      const r = (pos / 9) | 0;
+      const c = pos % 9;
+      ctx.fillRect(
+        canvasPad + gridBorder + c * (cellTrack + gridGap),
+        canvasPad + gridBorder + r * (cellTrack + gridGap),
+        cellTrack,
+        cellTrack,
+      );
+    });
+  }
 
   const cageInset = Math.max(4, Math.round(cellTrack * 0.1));
   const labelFontSize = Math.max(9, Math.round(cellTrack * 0.21));
@@ -719,32 +778,58 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     });
   };
 
-  const strokeCageOutline = (cellSet: Set<number>): void => {
-    const cornerDots: [number, number][] = [];
-    lineCtx.beginPath();
+  const strokeDashedCageOutline = (cellSet: Set<number>, offset = 0): void => {
+    const dashLen = Math.max(2, cellTrack * 0.045);
+    const gapLen = Math.max(2.5, cellTrack * 0.055);
+    const dashPattern = [dashLen, gapLen];
+    const totalPattern = dashLen + gapLen;
+
     traceBoundaryLoops(cellSet).forEach(loop => {
       const vertices = simplifyLoopVertices(loop.map(edge => edge.start));
       if (vertices.length < 2) return;
-      vertices.forEach((point, i) => {
+      const points = vertices.map((pt, i): [number, number] => {
         const prev = vertices[(i - 1 + vertices.length) % vertices.length];
         const next = vertices[(i + 1) % vertices.length];
-        const [x, y] = insetPoint(prev, point, next);
-        cornerDots.push([x, y]);
-        if (i === 0) lineCtx.moveTo(x, y);
-        else lineCtx.lineTo(x, y);
+        return insetPoint(prev, pt, next);
       });
-      lineCtx.closePath();
-    });
-    lineCtx.stroke();
 
-    lineCtx.save();
-    lineCtx.setLineDash([]);
-    cornerDots.forEach(([x, y]) => {
-      lineCtx.beginPath();
-      lineCtx.arc(x, y, lineCtx.lineWidth * 0.55, 0, Math.PI * 2);
-      lineCtx.fill();
+      const pts = [...points, points[0]];
+      let dashIndex = 0;
+      let dashPos = offset % totalPattern;
+      while (dashPos >= dashPattern[dashIndex]) {
+        dashPos -= dashPattern[dashIndex++];
+        if (dashIndex >= dashPattern.length) dashIndex = 0;
+      }
+      let drawing = dashIndex % 2 === 0;
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x1, y1] = pts[i];
+        const [x2, y2] = pts[i + 1];
+        const segLen = Math.hypot(x2 - x1, y2 - y1);
+        if (segLen === 0) continue;
+        const dx = (x2 - x1) / segLen;
+        const dy = (y2 - y1) / segLen;
+
+        let segPos = 0;
+        while (segPos < segLen) {
+          const stepMax = dashPattern[dashIndex] - dashPos;
+          const step = Math.min(stepMax, segLen - segPos);
+          if (drawing) {
+            lineCtx.beginPath();
+            lineCtx.moveTo(x1 + dx * segPos, y1 + dy * segPos);
+            lineCtx.lineTo(x1 + dx * (segPos + step), y1 + dy * (segPos + step));
+            lineCtx.stroke();
+          }
+          segPos += step;
+          dashPos += step;
+          if (dashPos >= dashPattern[dashIndex]) {
+            dashPos = 0;
+            dashIndex = (dashIndex + 1) % dashPattern.length;
+            drawing = !drawing;
+          }
+        }
+      }
     });
-    lineCtx.restore();
   };
 
   const labelBounds = (sum: number, labelCell: number): { x: number; y: number; w: number; h: number } => {
@@ -795,32 +880,37 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   };
 
   // Pass 2: dotted cage borders on a dedicated overlay above the base Sudoku grid.
+  const selectedCage = game.selectedCell === -1 ? undefined : cages.find(cage => cage.cells.includes(game.selectedCell));
+
+  const allLabelBounds = cages.map(cage => labelBounds(cage.sum, getLabelCell(cage)));
+
+  const clearLabels = (): void => {
+    lineCtx.save();
+    lineCtx.globalCompositeOperation = 'destination-out';
+    lineCtx.beginPath();
+    allLabelBounds.forEach(({ x, y, w, h }) => roundedRect(x, y, w, h, labelRadius));
+    lineCtx.fill();
+    lineCtx.restore();
+  };
+
+  // Draw static content (box grid + all non-animated cages) once.
+  lineCtx.clearRect(0, 0, canvasPx, canvasPx);
   lineCtx.lineCap = 'round';
   lineCtx.lineJoin = 'round';
   lineCtx.lineWidth = Math.max(1.5, cellTrack * 0.035);
-  lineCtx.setLineDash([Math.max(1.5, cellTrack * 0.055), Math.max(3, cellTrack * 0.07)]);
+  lineCtx.setLineDash([]);
   lineCtx.shadowBlur = 0;
   lineCtx.shadowColor = 'transparent';
   strokeBoxGrid();
-
   cages.forEach(cage => {
+    if (cage === selectedCage) return;
     lineCtx.strokeStyle = CAGE_BORDERS[cage.colorIndex];
     lineCtx.fillStyle = CAGE_BORDERS[cage.colorIndex];
-    strokeCageOutline(new Set(cage.cells));
+    strokeDashedCageOutline(new Set(cage.cells), 0);
   });
+  clearLabels();
 
-  lineCtx.save();
-  lineCtx.globalCompositeOperation = 'destination-out';
-  lineCtx.beginPath();
-  cages.forEach(cage => {
-    const labelCell = getLabelCell(cage);
-    const { x, y, w, h } = labelBounds(cage.sum, labelCell);
-    roundedRect(x, y, w, h, labelRadius);
-  });
-  lineCtx.fill();
-  lineCtx.restore();
-
-  cages.forEach(cage => {
+  cages.forEach((cage, cageIndex) => {
     const labelCell = getLabelCell(cage);
     const row = (labelCell / 9) | 0;
     const col = labelCell % 9;
@@ -829,17 +919,373 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     const label = document.createElement('div');
     label.className = 'cage-sum-label';
     label.textContent = String(cage.sum);
+    label.dataset.cageIndex = String(cageIndex);
     label.style.fontSize = labelFontSize + 'px';
     label.style.left = (x + cageInset + 1) + 'px';
     label.style.top  = (y + cageInset - 4) + 'px';
     el.boardContainer.appendChild(label);
   });
+
+  if (selectedCage) {
+    // Save static frame as pixel data so the RAF loop only redraws the one animated cage.
+    const staticImageData = lineCtx.getImageData(0, 0, lineCanvas.width, lineCanvas.height);
+
+    const dashLen = Math.max(2, cellTrack * 0.045);
+    const gapLen = Math.max(2.5, cellTrack * 0.055);
+    const totalPattern = dashLen + gapLen;
+    const SPEED = 20; // px/sec
+
+    const animate = (timestamp: number) => {
+      const offset = ((timestamp - CAGE_ANIM_EPOCH) * SPEED / 1000) % totalPattern;
+
+      lineCtx.putImageData(staticImageData, 0, 0);
+      lineCtx.lineCap = 'round';
+      lineCtx.lineJoin = 'round';
+      lineCtx.lineWidth = Math.max(2, cellTrack * 0.048);
+      lineCtx.strokeStyle = CAGE_BORDERS_SELECTED[selectedCage.colorIndex];
+      lineCtx.fillStyle = CAGE_BORDERS_SELECTED[selectedCage.colorIndex];
+      strokeDashedCageOutline(new Set(selectedCage.cells), offset);
+      clearLabels();
+
+      cageAnimRafId = requestAnimationFrame(animate);
+    };
+    cageAnimRafId = requestAnimationFrame(animate);
+  }
 }
 
 function renderAllCells(game: GameState): void {
   for (let i = 0; i < 81; i++) {
     renderCell(game, i);
   }
+  if (game.cages) setupCageCanvas(game, getInnerBoardPx());
+  drawBoardCanvas(game);
+}
+
+function getInnerBoardPx(): number {
+  const boardPad = parseFloat(el.boardContainer.style.getPropertyValue('--board-pad')) || 0;
+  return el.boardContainer.clientWidth - boardPad * 2;
+}
+
+function drawBoardCanvas(game: GameState): void {
+  const canvas = el.boardCanvas;
+  const canvasPx = el.boardContainer.clientWidth;
+  const boardPad = parseFloat(el.boardContainer.style.getPropertyValue('--board-pad')) || 0;
+  const boardPx = canvasPx - boardPad * 2;
+  if (canvasPx <= 0 || boardPx <= 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(canvasPx * dpr);
+  canvas.height = Math.round(canvasPx * dpr);
+
+  const ctx = canvas.getContext('2d')!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvasPx, canvasPx);
+
+  const bodyStyle = getComputedStyle(document.body);
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const palette = {
+    cellBg: isDark ? '#1a1b2e' : '#ffffff',
+    gridLine: isDark ? 'rgba(244,245,255,0.12)' : 'rgba(26,27,46,0.14)',
+    boxLine: isDark ? 'rgba(244,245,255,0.42)' : 'rgba(26,27,46,0.42)',
+    given: isDark ? '#e8e9f8' : '#1a1b2e',
+    user: isDark ? '#818cf8' : '#6366f1',
+    error: isDark ? '#f87171' : '#dc2626',
+    errorBg: isDark ? 'rgba(248,113,113,0.12)' : 'rgba(239,68,68,0.12)',
+  };
+  const gridBorder = 0;
+  const gridGap = 0;
+  const cellTrack = boardPx / 9;
+  const cellStep = cellTrack + gridGap;
+  const cellStart = (line: number): number => boardPad + gridBorder + line * cellStep;
+  const cellSpan = (count: number): number => cellTrack * count + gridGap * (count - 1);
+
+  ctx.fillStyle = palette.gridLine;
+  ctx.fillRect(boardPad, boardPad, boardPx, boardPx);
+
+  for (let idx = 0; idx < 81; idx++) {
+    const row = (idx / 9) | 0;
+    const col = idx % 9;
+    const cell = game.cells[idx];
+    ctx.fillStyle = cell.error && state.settings.showErrors ? palette.errorBg : palette.cellBg;
+    ctx.fillRect(cellStart(col), cellStart(row), cellTrack, cellTrack);
+  }
+
+  drawKillerSumGuides(game, cellStart, cellSpan, cellTrack);
+
+  ctx.save();
+  ctx.strokeStyle = palette.gridLine;
+  ctx.lineWidth = 1;
+  for (let line = 0; line <= 9; line++) {
+    const p = Math.round(cellStart(line)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(p, boardPad);
+    ctx.lineTo(p, boardPad + boardPx);
+    ctx.moveTo(boardPad, p);
+    ctx.lineTo(boardPad + boardPx, p);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = palette.boxLine;
+  ctx.lineWidth = Math.max(1.5, cellTrack * 0.022);
+  [3, 6].forEach(line => {
+    const p = Math.round(cellStart(line)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(p, boardPad + gridBorder);
+    ctx.lineTo(p, boardPad + boardPx - gridBorder);
+    ctx.moveTo(boardPad + gridBorder, p);
+    ctx.lineTo(boardPad + boardPx - gridBorder, p);
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.round(cellTrack * 0.52)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
+  for (let idx = 0; idx < 81; idx++) {
+    const cell = game.cells[idx];
+    if (cell.value === 0) continue;
+    const row = (idx / 9) | 0;
+    const col = idx % 9;
+    ctx.fillStyle = cell.error && state.settings.showErrors
+      ? palette.error
+      : cell.given
+        ? palette.given
+        : palette.user;
+    if (state.settings.showHighlights && idx === game.selectedCell) {
+      ctx.fillStyle = document.documentElement.getAttribute('data-theme') === 'dark' ? '#f4f5ff' : '#1a1b2e';
+    }
+    ctx.fillText(String(cell.value), cellStart(col) + cellTrack / 2, cellStart(row) + cellTrack / 2 + cellTrack * 0.02);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const memoPad = Math.max(3, cellTrack * 0.14);
+  const memoSlot = (cellTrack - memoPad * 2) / 3;
+  ctx.font = `600 ${Math.round(memoSlot * 0.62)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
+  for (let idx = 0; idx < 81; idx++) {
+    const cell = game.cells[idx];
+    if (cell.value !== 0 || cell.memos.length === 0) continue;
+    const row = (idx / 9) | 0;
+    const col = idx % 9;
+    const isSelected = state.settings.showHighlights && idx === game.selectedCell;
+    ctx.fillStyle = isSelected
+      ? (isDark ? '#f4f5ff' : '#1a1b2e')
+      : palette.user;
+    for (const n of cell.memos) {
+      const mRow = ((n - 1) / 3) | 0;
+      const mCol = (n - 1) % 3;
+      ctx.fillText(
+        String(n),
+        cellStart(col) + memoPad + (mCol + 0.5) * memoSlot,
+        cellStart(row) + memoPad + (mRow + 0.5) * memoSlot,
+      );
+    }
+  }
+  ctx.restore();
+}
+
+function drawKillerSumGuides(
+  game: GameState,
+  cellStart: (line: number) => number,
+  cellSpan: (count: number) => number,
+  cellTrack: number,
+): void {
+  const canvas = el.sumCanvas;
+  const boardPx = el.boardContainer.clientWidth;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(boardPx * dpr);
+  canvas.height = Math.round(boardPx * dpr);
+  const ctx = canvas.getContext('2d')!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, boardPx, boardPx);
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const accent = isDark ? 'rgba(251,191,36,0.9)' : 'rgba(217,119,6,0.9)';
+  const selectedFill = isDark ? 'rgba(129,140,248,0.42)' : 'rgba(99,102,241,0.32)';
+  const peerFill = isDark ? 'rgba(129,140,248,0.18)' : 'rgba(99,102,241,0.14)';
+
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.fillStyle = accent;
+  ctx.globalAlpha = 0.34;
+  ctx.lineWidth = Math.max(1, cellTrack * 0.018);
+  ctx.font = `900 ${Math.max(10, Math.round(cellTrack * 0.15))}px ${getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif'}`;
+
+  const lineOffset = 0.5;
+  const gapPad = Math.max(3, cellTrack * 0.04);
+  const drawLine = (x1: number, y1: number, x2: number, y2: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  };
+  const drawHorizontalLineWithGap = (
+    x: number,
+    y: number,
+    w: number,
+    gapCenter: number,
+    gapWidth: number,
+  ): void => {
+    const left = x + lineOffset;
+    const right = x + w - lineOffset;
+    const gapStart = Math.max(left, gapCenter - gapWidth / 2 - gapPad);
+    const gapEnd = Math.min(right, gapCenter + gapWidth / 2 + gapPad);
+    drawLine(left, y, gapStart, y);
+    drawLine(gapEnd, y, right, y);
+  };
+  const drawLeftLineWithGap = (x: number, y: number, h: number, gapCenter: number, gapHeight: number): void => {
+    const top = y + lineOffset;
+    const bottom = y + h - lineOffset;
+    const gapStart = Math.max(top, gapCenter - gapHeight / 2 - gapPad);
+    const gapEnd = Math.min(bottom, gapCenter + gapHeight / 2 + gapPad);
+    drawLine(x + lineOffset, top, x + lineOffset, gapStart);
+    drawLine(x + lineOffset, gapEnd, x + lineOffset, bottom);
+  };
+  const strokeRange = (
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options: {
+      topGap?: { center: number; width: number };
+      bottomGap?: { center: number; width: number };
+      leftGap?: { center: number; height: number };
+      dashed?: boolean;
+    } = {},
+  ): void => {
+    ctx.save();
+    ctx.setLineDash(options.dashed ? [cellTrack * 0.09, cellTrack * 0.07] : []);
+    if (options.topGap) drawHorizontalLineWithGap(x, y + lineOffset, w, options.topGap.center, options.topGap.width);
+    else drawLine(x + lineOffset, y + lineOffset, x + w - lineOffset, y + lineOffset);
+    drawLine(x + w - lineOffset, y + lineOffset, x + w - lineOffset, y + h - lineOffset);
+    if (options.bottomGap) drawHorizontalLineWithGap(x, y + h - lineOffset, w, options.bottomGap.center, options.bottomGap.width);
+    else drawLine(x + w - lineOffset, y + h - lineOffset, x + lineOffset, y + h - lineOffset);
+    if (options.leftGap) drawLeftLineWithGap(x, y, h, options.leftGap.center, options.leftGap.height);
+    else drawLine(x + lineOffset, y + h - lineOffset, x + lineOffset, y + lineOffset);
+    ctx.restore();
+  };
+
+  const target = makeSelectionSnapshot(game);
+  if (snapshotKey(target) !== snapshotKey(lastSelectionSnapshot)) {
+    selectionTransition = {
+      from: lastSelectionSnapshot,
+      to: target,
+      start: performance.now(),
+    };
+    lastSelectionSnapshot = target;
+  }
+
+  const ease = (t: number): number => 1 - Math.pow(1 - t, 3);
+  const lerp = (from: number, to: number, t: number): number => from + (to - from) * t;
+  const now = performance.now();
+  let drawSnapshot = target;
+  let drawAlpha = 1;
+  let rowAlpha = 1;
+  let colAlpha = 1;
+  let boxAlpha = 1;
+  let selectedAlpha = 1;
+
+  if (selectionTransition) {
+    const rawProgress = Math.min(1, (now - selectionTransition.start) / SELECTION_TRANSITION_MS);
+    const progress = ease(rawProgress);
+    const from = selectionTransition.from ?? selectionTransition.to;
+    const to = selectionTransition.to ?? selectionTransition.from;
+
+    if (from && to) {
+      drawSnapshot = {
+        ...to,
+        row: lerp(from.row, to.row, progress),
+        col: lerp(from.col, to.col, progress),
+        boxRow: lerp(from.boxRow, to.boxRow, progress),
+        boxCol: lerp(from.boxCol, to.boxCol, progress),
+      };
+    }
+    drawAlpha = selectionTransition.to ? progress : 1 - progress;
+    rowAlpha = from && to && from.row === to.row ? 1 : drawAlpha;
+    colAlpha = from && to && from.col === to.col ? 1 : drawAlpha;
+    boxAlpha = from && to && from.boxRow === to.boxRow && from.boxCol === to.boxCol ? 1 : drawAlpha;
+    selectedAlpha = drawAlpha;
+
+    if (rawProgress < 1) scheduleSelectionTransitionFrame();
+    else selectionTransition = null;
+  }
+
+  if (!drawSnapshot) {
+    ctx.restore();
+    return;
+  }
+
+  const rowX = cellStart(0);
+  const rowY = cellStart(drawSnapshot.row);
+  const colX = cellStart(drawSnapshot.col);
+  const colY = cellStart(0);
+  const boxX = cellStart(drawSnapshot.boxCol);
+  const boxY = cellStart(drawSnapshot.boxRow);
+
+  if (state.settings.showHighlights) {
+    ctx.save();
+    ctx.globalAlpha = rowAlpha;
+    ctx.fillStyle = peerFill;
+    ctx.fillRect(rowX, rowY, cellSpan(9), cellTrack);
+    ctx.globalAlpha = colAlpha;
+    ctx.fillRect(colX, colY, cellTrack, cellSpan(9));
+    ctx.globalAlpha = boxAlpha;
+    ctx.fillRect(boxX, boxY, cellSpan(3), cellSpan(3));
+    ctx.globalAlpha = selectedAlpha;
+    ctx.fillStyle = selectedFill;
+    ctx.fillRect(cellStart(drawSnapshot.col), cellStart(drawSnapshot.row), cellTrack, cellTrack);
+    ctx.restore();
+  }
+
+  if (!nightlyModule.isActive() || !state.settings.showKillerStats || game.type !== 'killer' || !game.cages) {
+    ctx.restore();
+    return;
+  }
+
+  const rowText = drawSnapshot.rowText;
+  const colText = drawSnapshot.colText;
+  const boxText = drawSnapshot.boxText;
+  const rowTextWidth = ctx.measureText(rowText).width;
+  const colTextWidth = ctx.measureText(colText).width;
+  const boxTextWidth = ctx.measureText(boxText).width;
+  const rowTextCenterY = rowY + cellTrack / 2;
+  const colTextCenterX = colX + cellTrack / 2;
+  const boxTextCenterX = boxX + Math.min(cellSpan(3) - boxTextWidth / 2 - gapPad, Math.max(boxTextWidth / 2 + gapPad, cellTrack * 0.55));
+  const boxTextY = boxY + cellSpan(3) - lineOffset;
+
+  ctx.globalAlpha = 0.34 * rowAlpha;
+  strokeRange(rowX, rowY, cellSpan(9), cellTrack, { leftGap: { center: rowTextCenterY, height: rowTextWidth } });
+  ctx.globalAlpha = 0.34 * colAlpha;
+  strokeRange(colX, colY, cellTrack, cellSpan(9), { topGap: { center: colTextCenterX, width: colTextWidth } });
+  ctx.globalAlpha = 0.34 * boxAlpha;
+  strokeRange(
+    boxX,
+    boxY,
+    cellSpan(3),
+    cellSpan(3),
+    { bottomGap: { center: boxTextCenterX, width: boxTextWidth }, dashed: true },
+  );
+
+  ctx.globalAlpha = colAlpha;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillText(colText, colTextCenterX, colY + lineOffset);
+  ctx.globalAlpha = boxAlpha;
+  ctx.fillText(boxText, boxTextCenterX, boxTextY);
+
+  ctx.save();
+  ctx.globalAlpha = rowAlpha;
+  ctx.translate(rowX + lineOffset, rowTextCenterY);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(rowText, 0, 0);
+  ctx.restore();
+
+  ctx.restore();
 }
 
 function renderCell(game: GameState, idx: number): void {
@@ -1044,22 +1490,14 @@ function updateHintCount(game: GameState): void {
   el.hintCount.textContent = String(game.hintCount ?? 0);
 }
 
-function updateKillerStats(game: GameState): void {
-  const isKiller = nightlyModule.isActive() && state.settings.showKillerStats && game.type === 'killer' && !!game.cages;
-  el.killerStats.classList.toggle('hidden', !isKiller);
-  if (!isKiller) return;
+function sumCellValues(game: GameState, positions: number[]): number {
+  return positions.reduce((sum, pos) => sum + game.cells[pos].value, 0);
+}
+
+function makeSelectionSnapshot(game: GameState): SelectionSnapshot | null {
+  if (game.selectedCell === -1) return null;
 
   const selected = game.selectedCell;
-  if (selected === -1) {
-    el.statCage.textContent = '-';
-    el.statRow.textContent = '-';
-    el.statCol.textContent = '-';
-    el.statBox.textContent = '-';
-    return;
-  }
-
-  const values = (positions: number[]): number => positions.reduce((sum, pos) => sum + game.cells[pos].value, 0);
-  const format = (sum: number, target: number): string => `${sum}/${target} · ${target - sum}`;
   const row = (selected / 9) | 0;
   const col = selected % 9;
   const boxRow = Math.floor(row / 3) * 3;
@@ -1067,12 +1505,62 @@ function updateKillerStats(game: GameState): void {
   const rowCells = Array.from({ length: 9 }, (_, i) => row * 9 + i);
   const colCells = Array.from({ length: 9 }, (_, i) => i * 9 + col);
   const boxCells = Array.from({ length: 9 }, (_, i) => (boxRow + Math.floor(i / 3)) * 9 + boxCol + (i % 3));
-  const cage = game.cages?.find(c => c.cells.includes(selected));
+  const format = (positions: number[]): string => `${sumCellValues(game, positions)}/45`;
 
-  el.statCage.textContent = cage ? format(values(cage.cells), cage.sum) : '-';
-  el.statRow.textContent = format(values(rowCells), 45);
-  el.statCol.textContent = format(values(colCells), 45);
-  el.statBox.textContent = format(values(boxCells), 45);
+  return {
+    selected,
+    row,
+    col,
+    boxRow,
+    boxCol,
+    rowText: format(rowCells),
+    colText: format(colCells),
+    boxText: format(boxCells),
+  };
+}
+
+function snapshotKey(snapshot: SelectionSnapshot | null): string {
+  return snapshot ? String(snapshot.selected) : 'none';
+}
+
+function scheduleSelectionTransitionFrame(): void {
+  if (selectionTransitionRaf !== null) return;
+  selectionTransitionRaf = requestAnimationFrame(() => {
+    selectionTransitionRaf = null;
+    if (state.screen === 'game' && state.game) drawBoardCanvas(state.game);
+  });
+}
+
+function resetKillerSumOverlays(): void {
+  el.killerStats.classList.add('hidden');
+  document.querySelectorAll<HTMLElement>('.cage-sum-label').forEach(label => {
+    const cageIndex = Number(label.dataset.cageIndex);
+    const cage = state.game?.cages?.[cageIndex];
+    label.textContent = cage ? String(cage.sum) : '';
+    label.classList.remove('active');
+  });
+}
+
+function updateKillerStats(game: GameState): void {
+  const isKiller = nightlyModule.isActive() && state.settings.showKillerStats && game.type === 'killer' && !!game.cages;
+  el.killerStats.classList.add('hidden');
+  if (!isKiller) {
+    resetKillerSumOverlays();
+    drawBoardCanvas(game);
+    return;
+  }
+
+  const selected = game.selectedCell;
+  const cage = selected === -1 ? undefined : game.cages?.find(c => c.cells.includes(selected));
+  document.querySelectorAll<HTMLElement>('.cage-sum-label').forEach(label => {
+    const cageIndex = Number(label.dataset.cageIndex);
+    const current = game.cages?.[cageIndex];
+    if (!current) return;
+    const active = current === cage;
+    label.textContent = active ? `${sumCellValues(game, current.cells)}/${current.sum}` : String(current.sum);
+    label.classList.toggle('active', active);
+  });
+  drawBoardCanvas(game);
 }
 
 function showCompletion(game: GameState): void {
