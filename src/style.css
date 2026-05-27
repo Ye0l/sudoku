@@ -764,24 +764,6 @@ body {
 }
 
 /* Killer cage sum label (positioned via JS) */
-.cage-sum-label {
-  position: absolute;
-  font-size: calc(var(--cell-size, 38px) * 0.21);
-  font-weight: 700;
-  color: var(--text-2);
-  line-height: 1;
-  padding: 0;
-  background: transparent;
-  text-align: left;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.cage-sum-label.active {
-  color: var(--accent);
-  font-weight: 900;
-}
-
 /* ============================================================
    Controls Bar
    ============================================================ */

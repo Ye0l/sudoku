@@ -545,7 +545,7 @@ function renderBoard(game: GameState): void {
   const area     = el.boardGrid.parentElement!.parentElement!;
   const maxSize  = Math.min(area.clientWidth - 16, area.clientHeight - 16) - 4;
   const size     = Math.max(200, maxSize);
-  const boardPad = Math.max(12, Math.floor(size * 0.028));
+  const boardPad = Math.max(16, Math.floor(size * 0.038));
   const cellSize = Math.floor((size - boardPad * 2) / 9);
   const boardPx  = cellSize * 9;
   const canvasPx = boardPx + boardPad * 2;
@@ -587,7 +587,6 @@ function renderBoard(game: GameState): void {
   } else {
     el.cageCanvas.style.display = 'none';
     el.cageLineCanvas.style.display = 'none';
-    document.querySelectorAll('.cage-sum-label').forEach(e => e.remove());
   }
 
   renderAllCells(game);
@@ -617,8 +616,6 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     c.style.width  = canvasPx + 'px';
     c.style.height = canvasPx + 'px';
   });
-
-  document.querySelectorAll('.cage-sum-label').forEach(e => e.remove());
 
   const ctx = canvas.getContext('2d')!;
   const lineCtx = lineCanvas.getContext('2d')!;
@@ -700,6 +697,8 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   const labelFontSize = Math.max(9, Math.round(cellTrack * 0.21));
   const labelFontFamily = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
   const labelFont = `700 ${labelFontSize}px ${labelFontFamily}`;
+  const activeLabelFontSize = Math.max(10, Math.round(cellTrack * 0.15));
+  const activeLabelFont = `900 ${activeLabelFontSize}px ${labelFontFamily}`;
   const labelClearPadX = Math.max(2, Math.round(cellTrack * 0.055));
   const labelClearPadY = Math.max(2, Math.round(cellTrack * 0.045));
   const labelRadius = Math.max(3, Math.round(cellTrack * 0.07));
@@ -944,20 +943,32 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   });
   clearLabels();
 
-  cages.forEach((cage, cageIndex) => {
+  cages.forEach(cage => {
     const labelCell = getLabelCell(cage);
     const row = (labelCell / 9) | 0;
     const col = labelCell % 9;
-    const x = cellStartCoord(col);
-    const y = cellStartCoord(row);
-    const label = document.createElement('div');
-    label.className = 'cage-sum-label';
-    label.textContent = String(cage.sum);
-    label.dataset.cageIndex = String(cageIndex);
-    label.style.fontSize = labelFontSize + 'px';
-    label.style.left = (x + cageInset + 1) + 'px';
-    label.style.top  = (y + cageInset - 4) + 'px';
-    el.boardContainer.appendChild(label);
+    const labelX = cellStartCoord(col) + cageInset + 1;
+    const labelY = cellStartCoord(row) + cageInset - 4;
+    const selected = cage === selectedCage;
+    const text = selected ? `${sumCellValues(game, cage.cells)}/${cage.sum}` : String(cage.sum);
+
+    lineCtx.save();
+    lineCtx.textAlign = 'left';
+    lineCtx.textBaseline = 'top';
+    if (selected) {
+      lineCtx.font = activeLabelFont;
+      lineCtx.lineJoin = 'round';
+      lineCtx.lineWidth = Math.max(2.5, cellTrack * 0.075);
+      lineCtx.strokeStyle = isDark ? 'rgba(244,245,255,0.92)' : 'rgba(26,27,46,0.86)';
+      lineCtx.strokeText(text, labelX, labelY);
+      lineCtx.fillStyle = isDark ? '#0f0f1a' : '#ffffff';
+      lineCtx.fillText(text, labelX, labelY);
+    } else {
+      lineCtx.font = labelFont;
+      lineCtx.fillStyle = isDark ? '#9a9bca' : '#5a5b6a';
+      lineCtx.fillText(text, labelX, labelY);
+    }
+    lineCtx.restore();
   });
 }
 
@@ -1204,10 +1215,12 @@ function drawKillerSumGuides(
     else selectionTransition = null;
   }
 
-  const rowX = cellStart(0);
+  const sumOffset = Math.max(8, cellTrack * 0.15);
+  const gridStart = cellStart(0);
+  const rowX = gridStart;
   const rowY = drawSnapshot ? cellStart(drawSnapshot.row) : 0;
   const colX = drawSnapshot ? cellStart(drawSnapshot.col) : 0;
-  const colY = cellStart(0);
+  const colY = gridStart;
   const boxX = drawSnapshot ? cellStart(drawSnapshot.boxCol) : 0;
   const boxY = drawSnapshot ? cellStart(drawSnapshot.boxRow) : 0;
 
@@ -1275,11 +1288,24 @@ function drawKillerSumGuides(
   const colTextCenterX = colX + cellTrack / 2;
   const boxTextCenterX = boxX + Math.min(cellSpan(3) - boxTextWidth / 2 - gapPad, Math.max(boxTextWidth / 2 + gapPad, cellTrack * 0.55));
   const boxTextY = boxY + cellSpan(3) - lineOffset;
+  const textStroke = isDark ? 'rgba(244,245,255,0.92)' : 'rgba(26,27,46,0.86)';
+  const textFill = isDark ? '#0f0f1a' : '#ffffff';
+  const textStrokeWidth = Math.max(2.5, cellTrack * 0.075);
+  const drawOutlinedText = (text: string, x: number, y: number): void => {
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = textStrokeWidth;
+    ctx.strokeStyle = textStroke;
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = textFill;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  };
 
   ctx.globalAlpha = 0.34 * rowAlpha;
-  strokeRange(rowX, rowY, cellSpan(9), cellTrack, { leftGap: { center: rowTextCenterY, height: rowTextWidth } });
+  strokeRange(rowX, rowY, cellSpan(9), cellTrack);
   ctx.globalAlpha = 0.34 * colAlpha;
-  strokeRange(colX, colY, cellTrack, cellSpan(9), { topGap: { center: colTextCenterX, width: colTextWidth } });
+  strokeRange(colX, colY, cellTrack, cellSpan(9));
   ctx.globalAlpha = 0.34 * boxAlpha;
   strokeRange(
     boxX,
@@ -1292,15 +1318,15 @@ function drawKillerSumGuides(
   ctx.globalAlpha = colAlpha;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  ctx.fillText(colText, colTextCenterX, colY + lineOffset);
+  drawOutlinedText(colText, colTextCenterX, gridStart - sumOffset);
   ctx.globalAlpha = boxAlpha;
-  ctx.fillText(boxText, boxTextCenterX, boxTextY);
+  drawOutlinedText(boxText, boxTextCenterX, boxTextY);
 
   ctx.save();
   ctx.globalAlpha = rowAlpha;
-  ctx.translate(rowX + lineOffset, rowTextCenterY);
+  ctx.translate(gridStart - sumOffset, rowTextCenterY);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText(rowText, 0, 0);
+  drawOutlinedText(rowText, 0, 0);
   ctx.restore();
 
   ctx.restore();
@@ -1553,12 +1579,6 @@ function scheduleSelectionTransitionFrame(): void {
 
 function resetKillerSumOverlays(): void {
   el.killerStats.classList.add('hidden');
-  document.querySelectorAll<HTMLElement>('.cage-sum-label').forEach(label => {
-    const cageIndex = Number(label.dataset.cageIndex);
-    const cage = state.game?.cages?.[cageIndex];
-    label.textContent = cage ? String(cage.sum) : '';
-    label.classList.remove('active');
-  });
 }
 
 function updateKillerStats(game: GameState): void {
@@ -1570,16 +1590,7 @@ function updateKillerStats(game: GameState): void {
     return;
   }
 
-  const selected = game.selectedCell;
-  const cage = selected === -1 ? undefined : game.cages?.find(c => c.cells.includes(selected));
-  document.querySelectorAll<HTMLElement>('.cage-sum-label').forEach(label => {
-    const cageIndex = Number(label.dataset.cageIndex);
-    const current = game.cages?.[cageIndex];
-    if (!current) return;
-    const active = current === cage;
-    label.textContent = active ? `${sumCellValues(game, current.cells)}/${current.sum}` : String(current.sum);
-    label.classList.toggle('active', active);
-  });
+  if (game.cages) setupCageCanvas(game, getInnerBoardPx());
   drawBoardCanvas(game);
 }
 
