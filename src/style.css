@@ -565,44 +565,6 @@ body {
 }
 .mistake-dot.active { background: var(--danger); }
 
-.killer-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 6px 8px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.killer-stats.hidden {
-  display: none;
-}
-
-.killer-stat {
-  min-width: 0;
-  padding: 5px 4px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface2);
-  text-align: center;
-}
-
-.killer-stat span {
-  display: block;
-  color: var(--text-2);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.killer-stat strong {
-  display: block;
-  margin-top: 1px;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Board area */
 .board-area {
   flex: 1;
@@ -1683,13 +1645,6 @@ body {
     font-variant-numeric: tabular-nums;
     color: var(--text);
     padding: 8px;
-  }
-
-  .game-side .killer-stats {
-    grid-template-columns: repeat(2, 1fr);
-    padding: 0;
-    border-bottom: none;
-    background: transparent;
   }
 
   .numpad {

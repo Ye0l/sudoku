@@ -63,7 +63,6 @@ export interface AppSettings {
   numpadLayout: NumpadLayout;
   gridLineOpacity: number;
   boxLineOpacity: number;
-  showKillerStats: boolean;
 }
 
 export interface AppState {
@@ -84,5 +83,4 @@ export const DEFAULT_SETTINGS: AppSettings = {
   numpadLayout: 'grid',
   gridLineOpacity: 0.14,
   boxLineOpacity: 0.42,
-  showKillerStats: true,
 };

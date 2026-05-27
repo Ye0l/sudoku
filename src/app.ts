@@ -62,11 +62,6 @@ const el = {
   boardContainer:document.getElementById('board-container')!,
   cageCanvas:    document.getElementById('cage-canvas') as HTMLCanvasElement,
   cageLineCanvas:document.getElementById('cage-line-canvas') as HTMLCanvasElement,
-  killerStats:   document.getElementById('killer-stats')!,
-  statCage:      document.getElementById('killer-stat-cage')!,
-  statRow:       document.getElementById('killer-stat-row')!,
-  statCol:       document.getElementById('killer-stat-col')!,
-  statBox:       document.getElementById('killer-stat-box')!,
   loadingOverlay:document.getElementById('loading-overlay')!,
   completeOverlay:document.getElementById('complete-overlay')!,
   completeTime:  document.getElementById('complete-time')!,
@@ -109,7 +104,6 @@ const el = {
   toggleHighlights:document.getElementById('toggle-highlights') as HTMLInputElement,
   toggleHaptics:   document.getElementById('toggle-haptics') as HTMLInputElement,
   accentThemeBtns:document.querySelectorAll<HTMLButtonElement>('.accent-theme-btn'),
-  toggleKillerStats: document.getElementById('toggle-killer-stats') as HTMLInputElement,
   gridLineOpacity: document.getElementById('grid-line-opacity') as HTMLInputElement,
   boxLineOpacity:  document.getElementById('box-line-opacity') as HTMLInputElement,
   gridLinePreview: document.getElementById('grid-line-preview')!,
@@ -120,28 +114,6 @@ const el = {
 
 const undoStack: { cells: CellState[] }[] = [];
 let settingsReturnScreen: Exclude<Screen, 'settings'> = 'menu';
-
-type SelectionSnapshot = {
-  selected: number;
-  row: number;
-  col: number;
-  boxRow: number;
-  boxCol: number;
-  rowText: string;
-  colText: string;
-  boxText: string;
-};
-
-type SelectionTransition = {
-  from: SelectionSnapshot | null;
-  to: SelectionSnapshot | null;
-  start: number;
-};
-
-const SELECTION_TRANSITION_MS = 160;
-let lastSelectionSnapshot: SelectionSnapshot | null = null;
-let selectionTransition: SelectionTransition | null = null;
-let selectionTransitionRaf: number | null = null;
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
@@ -517,14 +489,11 @@ function updateLayoutMode(): void {
 
   if (landscape) {
     side.style.display = 'flex';
-    side.appendChild(el.killerStats);
     side.appendChild(numpad);
     side.appendChild(controls);
   } else {
     const gameScreen = document.getElementById('screen-game')!;
-    const boardArea = el.boardContainer.parentElement!;
     side.style.display = 'none';
-    if (el.killerStats.parentElement !== gameScreen) gameScreen.insertBefore(el.killerStats, boardArea);
     if (numpad.parentElement !== gameScreen) gameScreen.appendChild(numpad);
     if (controls.parentElement !== gameScreen) {
       gameScreen.insertBefore(controls, numpad);
@@ -545,10 +514,10 @@ function renderBoard(game: GameState): void {
   const area     = el.boardGrid.parentElement!.parentElement!;
   const maxSize  = Math.min(area.clientWidth - 16, area.clientHeight - 16) - 4;
   const size     = Math.max(200, maxSize);
-  const boardPad = Math.max(16, Math.floor(size * 0.038));
-  const cellSize = Math.floor((size - boardPad * 2) / 9);
+  const boardPad = 0;
+  const cellSize = Math.floor(size / 9);
   const boardPx  = cellSize * 9;
-  const canvasPx = boardPx + boardPad * 2;
+  const canvasPx = boardPx;
 
   container.style.width  = canvasPx + 'px';
   container.style.height = canvasPx + 'px';
@@ -593,7 +562,6 @@ function renderBoard(game: GameState): void {
   updateNumpadCounts(game);
   updateMemoBtn(game);
   updateHintCount(game);
-  updateKillerStats(game);
 }
 
 function setupCageCanvas(game: GameState, boardPx: number): void {
@@ -950,7 +918,7 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     const labelX = cellStartCoord(col) + cageInset + 1;
     const labelY = cellStartCoord(row) + cageInset - 4;
     const selected = cage === selectedCage;
-    const text = selected ? `${sumCellValues(game, cage.cells)}/${cage.sum}` : String(cage.sum);
+    const text = String(cage.sum);
 
     lineCtx.save();
     lineCtx.textAlign = 'left';
@@ -1100,235 +1068,46 @@ function drawKillerSumGuides(
   ctx.clearRect(0, 0, boardPx, boardPx);
 
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const accent = isDark ? 'rgba(251,191,36,0.9)' : 'rgba(217,119,6,0.9)';
   const peerFill = isDark ? 'rgba(129,140,248,0.18)' : 'rgba(99,102,241,0.14)';
 
-  ctx.save();
-  ctx.strokeStyle = accent;
-  ctx.fillStyle = accent;
-  ctx.globalAlpha = 0.34;
-  ctx.lineWidth = Math.max(1, cellTrack * 0.018);
-  ctx.font = `900 ${Math.max(10, Math.round(cellTrack * 0.15))}px ${getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif'}`;
-
-  const lineOffset = 0.5;
-  const gapPad = Math.max(3, cellTrack * 0.04);
-  const drawLine = (x1: number, y1: number, x2: number, y2: number): void => {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  };
-  const drawHorizontalLineWithGap = (
-    x: number,
-    y: number,
-    w: number,
-    gapCenter: number,
-    gapWidth: number,
-  ): void => {
-    const left = x + lineOffset;
-    const right = x + w - lineOffset;
-    const gapStart = Math.max(left, gapCenter - gapWidth / 2 - gapPad);
-    const gapEnd = Math.min(right, gapCenter + gapWidth / 2 + gapPad);
-    drawLine(left, y, gapStart, y);
-    drawLine(gapEnd, y, right, y);
-  };
-  const drawLeftLineWithGap = (x: number, y: number, h: number, gapCenter: number, gapHeight: number): void => {
-    const top = y + lineOffset;
-    const bottom = y + h - lineOffset;
-    const gapStart = Math.max(top, gapCenter - gapHeight / 2 - gapPad);
-    const gapEnd = Math.min(bottom, gapCenter + gapHeight / 2 + gapPad);
-    drawLine(x + lineOffset, top, x + lineOffset, gapStart);
-    drawLine(x + lineOffset, gapEnd, x + lineOffset, bottom);
-  };
-  const strokeRange = (
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    options: {
-      topGap?: { center: number; width: number };
-      bottomGap?: { center: number; width: number };
-      leftGap?: { center: number; height: number };
-      dashed?: boolean;
-    } = {},
-  ): void => {
-    ctx.save();
-    ctx.setLineDash(options.dashed ? [cellTrack * 0.09, cellTrack * 0.07] : []);
-    if (options.topGap) drawHorizontalLineWithGap(x, y + lineOffset, w, options.topGap.center, options.topGap.width);
-    else drawLine(x + lineOffset, y + lineOffset, x + w - lineOffset, y + lineOffset);
-    drawLine(x + w - lineOffset, y + lineOffset, x + w - lineOffset, y + h - lineOffset);
-    if (options.bottomGap) drawHorizontalLineWithGap(x, y + h - lineOffset, w, options.bottomGap.center, options.bottomGap.width);
-    else drawLine(x + w - lineOffset, y + h - lineOffset, x + lineOffset, y + h - lineOffset);
-    if (options.leftGap) drawLeftLineWithGap(x, y, h, options.leftGap.center, options.leftGap.height);
-    else drawLine(x + lineOffset, y + h - lineOffset, x + lineOffset, y + lineOffset);
-    ctx.restore();
-  };
-
-  const target = makeSelectionSnapshot(game);
-  if (snapshotKey(target) !== snapshotKey(lastSelectionSnapshot)) {
-    selectionTransition = {
-      from: lastSelectionSnapshot,
-      to: target,
-      start: performance.now(),
-    };
-    lastSelectionSnapshot = target;
-  }
-
-  const ease = (t: number): number => 1 - Math.pow(1 - t, 3);
-  const lerp = (from: number, to: number, t: number): number => from + (to - from) * t;
-  const now = performance.now();
-  let drawSnapshot = target;
-  let drawAlpha = 1;
-  let rowAlpha = 1;
-  let colAlpha = 1;
-  let boxAlpha = 1;
-  let selectedAlpha = 1;
-
-  if (selectionTransition) {
-    const rawProgress = Math.min(1, (now - selectionTransition.start) / SELECTION_TRANSITION_MS);
-    const progress = ease(rawProgress);
-    const from = selectionTransition.from;
-    const to = selectionTransition.to;
-
-    if (from && to) {
-      drawSnapshot = {
-        ...to,
-        row: lerp(from.row, to.row, progress),
-        col: lerp(from.col, to.col, progress),
-        boxRow: lerp(from.boxRow, to.boxRow, progress),
-        boxCol: lerp(from.boxCol, to.boxCol, progress),
-      };
-      drawAlpha = 1;
-    } else if (to) {
-      drawSnapshot = to;
-      drawAlpha = progress;
-    } else if (from) {
-      drawSnapshot = from;
-      drawAlpha = 1 - progress;
-    }
-    rowAlpha = from && to && from.row === to.row ? 1 : drawAlpha;
-    colAlpha = from && to && from.col === to.col ? 1 : drawAlpha;
-    boxAlpha = from && to && from.boxRow === to.boxRow && from.boxCol === to.boxCol ? 1 : drawAlpha;
-    selectedAlpha = drawAlpha;
-
-    if (rawProgress < 1) scheduleSelectionTransitionFrame();
-    else selectionTransition = null;
-  }
-
-  const sumOffset = Math.max(8, cellTrack * 0.15);
-  const gridStart = cellStart(0);
-  const rowX = gridStart;
-  const rowY = drawSnapshot ? cellStart(drawSnapshot.row) : 0;
-  const colX = drawSnapshot ? cellStart(drawSnapshot.col) : 0;
-  const colY = gridStart;
-  const boxX = drawSnapshot ? cellStart(drawSnapshot.boxCol) : 0;
-  const boxY = drawSnapshot ? cellStart(drawSnapshot.boxRow) : 0;
-
-  if (state.settings.showHighlights && drawSnapshot) {
-    const sc = drawSnapshot.col;
-    const sr = drawSnapshot.row;
+  if (state.settings.showHighlights && game.selectedCell !== -1) {
+    const sc = game.selectedCell % 9;
+    const sr = (game.selectedCell / 9) | 0;
     ctx.save();
     ctx.fillStyle = peerFill;
-    ctx.globalAlpha = rowAlpha;
-    // Draw row in two halves, skipping the column intersection to prevent double-paint
-    if (sc > 0) ctx.fillRect(cellStart(0), rowY, cellStart(sc) - cellStart(0), cellTrack);
-    if (sc < 8) ctx.fillRect(cellStart(sc + 1), rowY, cellStart(0) + cellSpan(9) - cellStart(sc + 1), cellTrack);
-    ctx.globalAlpha = colAlpha;
-    // Draw column in two halves too, so the selected cell has the same single-pass fill.
-    if (sr > 0) ctx.fillRect(colX, cellStart(0), cellTrack, cellStart(sr) - cellStart(0));
-    if (sr < 8) ctx.fillRect(colX, cellStart(sr + 1), cellTrack, cellStart(0) + cellSpan(9) - cellStart(sr + 1));
-    ctx.globalAlpha = selectedAlpha;
-    ctx.fillStyle = peerFill;
+    if (sc > 0) ctx.fillRect(cellStart(0), cellStart(sr), cellStart(sc) - cellStart(0), cellTrack);
+    if (sc < 8) ctx.fillRect(cellStart(sc + 1), cellStart(sr), cellStart(0) + cellSpan(9) - cellStart(sc + 1), cellTrack);
+    if (sr > 0) ctx.fillRect(cellStart(sc), cellStart(0), cellTrack, cellStart(sr) - cellStart(0));
+    if (sr < 8) ctx.fillRect(cellStart(sc), cellStart(sr + 1), cellTrack, cellStart(0) + cellSpan(9) - cellStart(sr + 1));
     ctx.fillRect(cellStart(sc), cellStart(sr), cellTrack, cellTrack);
     ctx.restore();
   }
 
-  // Draw memos on sumCanvas so they appear above the highlight fills
-  {
-    const bodyStyle = getComputedStyle(document.body);
-    const memoColor = bodyStyle.getPropertyValue('--cell-memo').trim() || (isDark ? '#a5b4fc' : '#4f46e5');
-    const memoPad = Math.max(3, cellTrack * 0.14);
-    const memoSlot = (cellTrack - memoPad * 2) / 3;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.globalAlpha = 1;
-    ctx.font = `600 ${Math.round(memoSlot * 0.62)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
-    for (let idx = 0; idx < 81; idx++) {
-      const cell = game.cells[idx];
-      if (cell.value !== 0 || cell.memos.length === 0) continue;
-      const mRow = (idx / 9) | 0;
-      const mCol = idx % 9;
-      ctx.fillStyle = memoColor;
-      for (const n of cell.memos) {
-        const nr = ((n - 1) / 3) | 0;
-        const nc = (n - 1) % 3;
-        ctx.fillText(
-          String(n),
-          cellStart(mCol) + memoPad + (nc + 0.5) * memoSlot,
-          cellStart(mRow) + memoPad + (nr + 0.5) * memoSlot,
-        );
-      }
-    }
-    ctx.restore();
-  }
-
-  if (!drawSnapshot || !state.settings.showKillerStats || game.type !== 'killer' || !game.cages) {
-    ctx.restore();
-    return;
-  }
-
-  const rowText = drawSnapshot.rowText;
-  const colText = drawSnapshot.colText;
-  const boxText = drawSnapshot.boxText;
-  const rowTextWidth = ctx.measureText(rowText).width;
-  const colTextWidth = ctx.measureText(colText).width;
-  const boxTextWidth = ctx.measureText(boxText).width;
-  const rowTextCenterY = rowY + cellTrack / 2;
-  const colTextCenterX = colX + cellTrack / 2;
-  const boxTextCenterX = boxX + Math.min(cellSpan(3) - boxTextWidth / 2 - gapPad, Math.max(boxTextWidth / 2 + gapPad, cellTrack * 0.55));
-  const boxTextY = boxY + cellSpan(3) - lineOffset;
-  const textStroke = isDark ? 'rgba(244,245,255,0.92)' : 'rgba(26,27,46,0.86)';
-  const textFill = isDark ? '#0f0f1a' : '#ffffff';
-  const textStrokeWidth = Math.max(2.5, cellTrack * 0.075);
-  const drawOutlinedText = (text: string, x: number, y: number): void => {
-    ctx.save();
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = textStrokeWidth;
-    ctx.strokeStyle = textStroke;
-    ctx.strokeText(text, x, y);
-    ctx.fillStyle = textFill;
-    ctx.fillText(text, x, y);
-    ctx.restore();
-  };
-
-  ctx.globalAlpha = 0.34 * rowAlpha;
-  strokeRange(rowX, rowY, cellSpan(9), cellTrack);
-  ctx.globalAlpha = 0.34 * colAlpha;
-  strokeRange(colX, colY, cellTrack, cellSpan(9));
-  ctx.globalAlpha = 0.34 * boxAlpha;
-  strokeRange(
-    boxX,
-    boxY,
-    cellSpan(3),
-    cellSpan(3),
-    { bottomGap: { center: boxTextCenterX, width: boxTextWidth }, dashed: true },
-  );
-
-  ctx.globalAlpha = colAlpha;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  drawOutlinedText(colText, colTextCenterX, gridStart - sumOffset);
-  ctx.globalAlpha = boxAlpha;
-  drawOutlinedText(boxText, boxTextCenterX, boxTextY);
-
+  // Draw memos inside cage-inset boundary (same inset as dashed cage borders)
+  const bodyStyle = getComputedStyle(document.body);
+  const memoColor = bodyStyle.getPropertyValue('--cell-memo').trim() || (isDark ? '#a5b4fc' : '#4f46e5');
+  const memoPad = Math.max(4, Math.round(cellTrack * 0.1));
+  const memoSlot = (cellTrack - memoPad * 2) / 3;
   ctx.save();
-  ctx.globalAlpha = rowAlpha;
-  ctx.translate(gridStart - sumOffset, rowTextCenterY);
-  ctx.rotate(-Math.PI / 2);
-  drawOutlinedText(rowText, 0, 0);
-  ctx.restore();
-
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `600 ${Math.round(memoSlot * 0.92)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
+  for (let idx = 0; idx < 81; idx++) {
+    const cell = game.cells[idx];
+    if (cell.value !== 0 || cell.memos.length === 0) continue;
+    const mRow = (idx / 9) | 0;
+    const mCol = idx % 9;
+    ctx.fillStyle = memoColor;
+    for (const n of cell.memos) {
+      const nr = ((n - 1) / 3) | 0;
+      const nc = (n - 1) % 3;
+      ctx.fillText(
+        String(n),
+        cellStart(mCol) + memoPad + (nc + 0.5) * memoSlot,
+        cellStart(mRow) + memoPad + (nr + 0.5) * memoSlot,
+      );
+    }
+  }
   ctx.restore();
 }
 
@@ -1536,60 +1315,7 @@ function updateHintCount(game: GameState): void {
   el.hintCount.textContent = String(game.hintCount ?? 0);
 }
 
-function sumCellValues(game: GameState, positions: number[]): number {
-  return positions.reduce((sum, pos) => sum + game.cells[pos].value, 0);
-}
-
-function makeSelectionSnapshot(game: GameState): SelectionSnapshot | null {
-  if (game.selectedCell === -1) return null;
-
-  const selected = game.selectedCell;
-  const row = (selected / 9) | 0;
-  const col = selected % 9;
-  const boxRow = Math.floor(row / 3) * 3;
-  const boxCol = Math.floor(col / 3) * 3;
-  const rowCells = Array.from({ length: 9 }, (_, i) => row * 9 + i);
-  const colCells = Array.from({ length: 9 }, (_, i) => i * 9 + col);
-  const boxCells = Array.from({ length: 9 }, (_, i) => (boxRow + Math.floor(i / 3)) * 9 + boxCol + (i % 3));
-  const format = (positions: number[]): string => `${sumCellValues(game, positions)}/45`;
-
-  return {
-    selected,
-    row,
-    col,
-    boxRow,
-    boxCol,
-    rowText: format(rowCells),
-    colText: format(colCells),
-    boxText: format(boxCells),
-  };
-}
-
-function snapshotKey(snapshot: SelectionSnapshot | null): string {
-  return snapshot ? String(snapshot.selected) : 'none';
-}
-
-function scheduleSelectionTransitionFrame(): void {
-  if (selectionTransitionRaf !== null) return;
-  selectionTransitionRaf = requestAnimationFrame(() => {
-    selectionTransitionRaf = null;
-    if (state.screen === 'game' && state.game) drawBoardCanvas(state.game);
-  });
-}
-
-function resetKillerSumOverlays(): void {
-  el.killerStats.classList.add('hidden');
-}
-
 function updateKillerStats(game: GameState): void {
-  const isKiller = state.settings.showKillerStats && game.type === 'killer' && !!game.cages;
-  el.killerStats.classList.add('hidden');
-  if (!isKiller) {
-    resetKillerSumOverlays();
-    drawBoardCanvas(game);
-    return;
-  }
-
   if (game.cages) setupCageCanvas(game, getInnerBoardPx());
   drawBoardCanvas(game);
 }
@@ -1845,7 +1571,6 @@ function syncSettingsUI(): void {
   el.toggleErrors.checked     = s.showErrors;
   el.toggleHighlights.checked = s.showHighlights;
   el.toggleHaptics.checked    = s.haptics;
-  el.toggleKillerStats.checked = s.showKillerStats;
   el.gridLineOpacity.value    = String(s.gridLineOpacity);
   el.boxLineOpacity.value     = String(s.boxLineOpacity);
   el.numpadLayoutBtns.forEach(btn => {
@@ -1995,11 +1720,6 @@ export function init(): void {
   el.toggleHaptics.addEventListener('change', () => {
     state.settings = { ...state.settings, haptics: el.toggleHaptics.checked };
     saveSettingsState();
-  });
-  el.toggleKillerStats.addEventListener('change', () => {
-    state.settings = { ...state.settings, showKillerStats: el.toggleKillerStats.checked };
-    saveSettingsState();
-    if (state.game) updateKillerStats(state.game);
   });
   el.numpadLayoutBtns.forEach(btn => {
     btn.addEventListener('click', () => {
