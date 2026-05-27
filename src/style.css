@@ -1,65 +1,4 @@
 /* ============================================================
-   Nightly mode – amber accent overrides
-   data-nightly attribute is set on <html> by nightly.ts
-   ============================================================ */
-[data-nightly] {
-  --accent:       oklch(72% 0.22 65);
-  --accent-2:     oklch(62% 0.18 65);
-  --accent-bg:    oklch(97% 0.05 65);
-  --accent-light: oklch(72% 0.22 65 / 0.13);
-}
-[data-nightly][data-theme="dark"] {
-  --accent:       oklch(80% 0.18 65);
-  --accent-2:     oklch(70% 0.14 65);
-  --accent-bg:    oklch(26% 0.09 65);
-  --accent-light: oklch(80% 0.18 65 / 0.16);
-}
-
-/* Nightly screen frame */
-.nightly-frame {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-}
-
-.nightly-only {
-  display: none !important;
-}
-
-[data-nightly] .ctrl-btn.nightly-only,
-[data-nightly] .line-calc.nightly-only {
-  display: flex !important;
-}
-
-[data-nightly] .line-calc-pad.nightly-only {
-  display: grid !important;
-}
-
-[data-nightly] .killer-stats.nightly-only:not(.hidden) {
-  display: grid !important;
-}
-
-[data-nightly] .hint-count.nightly-only {
-  display: block !important;
-}
-
-[data-nightly] .settings-item.nightly-only {
-  display: flex !important;
-}
-
-/* Nightly toggle – uses amber when checked */
-.settings-item-nightly .toggle-slider-nightly {
-  background: var(--border);
-}
-.settings-item-nightly input:checked + .toggle-slider-nightly {
-  background: oklch(72% 0.22 65);
-}
-[data-theme="dark"] .settings-item-nightly input:checked + .toggle-slider-nightly {
-  background: oklch(80% 0.18 65);
-}
-
-/* ============================================================
    CSS Custom Properties – Themes
    ============================================================ */
 :root {
@@ -88,6 +27,7 @@
   --shadow-lg:    0 8px 40px rgba(0,0,0,0.14);
   --radius:       12px;
   --radius-sm:    8px;
+  --mobile-input-panel-height: 239px;
 
   /* Cell colors */
   --cell-bg:        #ffffff;
@@ -162,6 +102,77 @@
 }
 
 /* ============================================================
+   Accent color variants
+   ============================================================ */
+[data-accent="yellow"] {
+  --accent:       oklch(72% 0.22 65);
+  --accent-2:     oklch(62% 0.18 65);
+  --accent-bg:    oklch(97% 0.05 65);
+  --accent-light: oklch(72% 0.22 65 / 0.13);
+  --cell-user:    #d97706;
+  --cell-memo:    #b45309;
+}
+[data-accent="yellow"][data-theme="dark"] {
+  --accent:       oklch(80% 0.18 65);
+  --accent-2:     oklch(70% 0.14 65);
+  --accent-bg:    oklch(26% 0.09 65);
+  --accent-light: oklch(80% 0.18 65 / 0.16);
+  --cell-user:    #fbbf24;
+  --cell-memo:    #fde68a;
+}
+
+[data-accent="red"] {
+  --accent:       oklch(58% 0.22 25);
+  --accent-2:     oklch(68% 0.17 25);
+  --accent-bg:    oklch(96% 0.035 25);
+  --accent-light: oklch(58% 0.22 25 / 0.12);
+  --cell-user:    #dc2626;
+  --cell-memo:    #b91c1c;
+}
+[data-accent="red"][data-theme="dark"] {
+  --accent:       oklch(72% 0.18 25);
+  --accent-2:     oklch(64% 0.17 25);
+  --accent-bg:    oklch(25% 0.065 25);
+  --accent-light: oklch(72% 0.18 25 / 0.16);
+  --cell-user:    #f87171;
+  --cell-memo:    #fca5a5;
+}
+
+[data-accent="violet"] {
+  --accent:       oklch(56% 0.24 305);
+  --accent-2:     oklch(66% 0.18 305);
+  --accent-bg:    oklch(96% 0.035 305);
+  --accent-light: oklch(56% 0.24 305 / 0.12);
+  --cell-user:    #9333ea;
+  --cell-memo:    #7e22ce;
+}
+[data-accent="violet"][data-theme="dark"] {
+  --accent:       oklch(74% 0.18 305);
+  --accent-2:     oklch(64% 0.18 305);
+  --accent-bg:    oklch(25% 0.065 305);
+  --accent-light: oklch(74% 0.18 305 / 0.16);
+  --cell-user:    #c084fc;
+  --cell-memo:    #ddd6fe;
+}
+
+[data-accent="green"] {
+  --accent:       oklch(58% 0.20 145);
+  --accent-2:     oklch(68% 0.16 145);
+  --accent-bg:    oklch(96% 0.035 145);
+  --accent-light: oklch(58% 0.20 145 / 0.12);
+  --cell-user:    #16a34a;
+  --cell-memo:    #15803d;
+}
+[data-accent="green"][data-theme="dark"] {
+  --accent:       oklch(76% 0.17 145);
+  --accent-2:     oklch(66% 0.16 145);
+  --accent-bg:    oklch(25% 0.065 145);
+  --accent-light: oklch(76% 0.17 145 / 0.16);
+  --cell-user:    #4ade80;
+  --cell-memo:    #bbf7d0;
+}
+
+/* ============================================================
    Reset & Base
    ============================================================ */
 *, *::before, *::after {
@@ -192,6 +203,27 @@ body {
   inset: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
            env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.nav-header,
+.settings-item,
+.ctrl-btn,
+.num-btn,
+.line-calc,
+.line-calc-pad,
+.line-calc-pad button,
+.line-calc-action,
+.theme-btn,
+.segmented-control button,
+.killer-stats,
+.numpad,
+.mobile-calc-wrap,
+.float-calc,
+.cell-value,
+.memo-num {
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
+  transition-duration: 0.18s;
+  transition-timing-function: ease;
 }
 
 /* ============================================================
@@ -959,20 +991,25 @@ body {
 /* ── Mobile portrait calc overlay ────────────────────────────────────────── */
 .mobile-calc-wrap {
   position: absolute;
-  bottom: 0;
   left: 0;
   right: 0;
-  z-index: 50;
-  height: 250px;
+  bottom: 0;
+  height: var(--mobile-input-panel-height);
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
   border-top: 1px solid var(--border);
+  overflow: hidden;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
   transform: translateY(100%);
-  transition: transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
 .mobile-calc-wrap.open {
+  opacity: 1;
+  pointer-events: auto;
   transform: translateY(0);
 }
 
@@ -986,12 +1023,11 @@ body {
 
 .mobile-calc-wrap .line-calc-pad,
 .mobile-calc-wrap .line-calc-pad.collapsed {
-  flex: 1 !important;
-  min-height: 0 !important;
+  flex: 0 0 auto !important;
   max-height: none !important;
   opacity: 1 !important;
   padding: 0 8px 6px !important;
-  grid-auto-rows: 1fr !important;
+  grid-auto-rows: 34px !important;
 }
 
 .mobile-calc-wrap .line-calc-pad button {
@@ -1081,12 +1117,8 @@ body {
 }
 
 [data-calc-open] .numpad {
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  gap: 0;
   opacity: 0;
-  overflow: hidden;
+  pointer-events: none;
 }
 
 /* ============================================================
@@ -1099,7 +1131,7 @@ body {
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   background: var(--bg-surface);
   flex-shrink: 0;
-  max-height: 96px;
+  max-height: var(--mobile-input-panel-height);
   opacity: 1;
   overflow: hidden;
   transition: max-height 0.18s ease, padding 0.18s ease, opacity 0.18s ease;
@@ -1126,14 +1158,8 @@ body {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: 6px;
-  height: 196px;
+  height: var(--mobile-input-panel-height);
   max-height: none;
-}
-
-[data-calc-open][data-numpad-layout="grid"] .numpad {
-  max-height: 0;
-  height: 0;
-  gap: 0;
 }
 
 [data-numpad-layout="grid"] .num-btn {
@@ -1523,12 +1549,14 @@ body {
 
 .segmented-control {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
 }
 
 .segmented-control button {
   min-width: 56px;
+  flex: 1 0 auto;
   height: 34px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

@@ -1,6 +1,6 @@
 // LocalStorage persistence
 
-import type { GameState, HistoryRecord, AppSettings, CachedPuzzle, GameType, Difficulty } from './types.ts';
+import type { AccentTheme, GameState, HistoryRecord, AppSettings, CachedPuzzle, GameType, Difficulty } from './types.ts';
 import { DEFAULT_SETTINGS } from './types.ts';
 
 const KEYS = {
@@ -58,7 +58,15 @@ export function clearHistory(): void {
 }
 
 export function loadSettings(): AppSettings {
-  return { ...DEFAULT_SETTINGS, ...load<Partial<AppSettings>>(KEYS.SETTINGS, {}) };
+  const saved = load<Partial<AppSettings> & { nightly?: boolean }>(KEYS.SETTINGS, {});
+  const savedAccent = saved.accentTheme as string | undefined;
+  const accentTheme: AccentTheme = savedAccent === 'default'
+    ? 'blue'
+    : savedAccent === 'nightly'
+      ? 'yellow'
+      : saved.accentTheme ?? (saved.nightly ? 'yellow' : DEFAULT_SETTINGS.accentTheme);
+  const { nightly: _nightly, ...settings } = saved;
+  return { ...DEFAULT_SETTINGS, ...settings, accentTheme };
 }
 
 export function saveSettings(settings: AppSettings): void {

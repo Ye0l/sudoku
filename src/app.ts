@@ -1,6 +1,6 @@
 // Main application controller
 
-import type { AppState, GameState, GameType, Difficulty, Screen, Theme, NumpadLayout, CellState, CachedPuzzle, HistoryRecord } from './types.ts';
+import type { AccentTheme, AppState, CageColorMode, GameState, GameType, Difficulty, Screen, Theme, NumpadLayout, CellState, CachedPuzzle, HistoryRecord } from './types.ts';
 import {
   loadGame, saveGame, loadHistory, loadSettings, saveSettings, clearHistory,
   takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, addHistory,
@@ -10,7 +10,6 @@ import {
   startTimer, stopTimer, formatTime, getElapsed,
 } from './game.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
-import * as nightlyModule from './nightly.ts';
 
 // Worker is loaded via Vite's ?worker suffix at runtime
 const createPuzzleWorker = (): Worker =>
@@ -103,17 +102,19 @@ const el = {
 
   // History
   historyList:   document.getElementById('history-list')!,
+  appVersion:    document.getElementById('app-version')!,
 
   // Settings
   toggleErrors:    document.getElementById('toggle-errors') as HTMLInputElement,
   toggleHighlights:document.getElementById('toggle-highlights') as HTMLInputElement,
   toggleHaptics:   document.getElementById('toggle-haptics') as HTMLInputElement,
-  toggleNightly:   document.getElementById('toggle-nightly') as HTMLInputElement,
+  accentThemeBtns:document.querySelectorAll<HTMLButtonElement>('.accent-theme-btn'),
   toggleKillerStats: document.getElementById('toggle-killer-stats') as HTMLInputElement,
   gridLineOpacity: document.getElementById('grid-line-opacity') as HTMLInputElement,
   boxLineOpacity:  document.getElementById('box-line-opacity') as HTMLInputElement,
   gridLinePreview: document.getElementById('grid-line-preview')!,
   numpadLayoutBtns:document.querySelectorAll<HTMLButtonElement>('.numpad-layout-btn'),
+  cageColorModeBtns:document.querySelectorAll<HTMLButtonElement>('.cage-color-mode-btn'),
   themeBtns:       document.querySelectorAll<HTMLButtonElement>('.theme-btn'),
 };
 
@@ -204,6 +205,9 @@ function openSettings(): void {
 
 function closeSettings(): void {
   navigate(settingsReturnScreen, settingsReturnScreen === 'game' ? 'fade' : 'back');
+  if (settingsReturnScreen === 'game' && state.game) {
+    renderBoard(state.game);
+  }
 }
 
 // ── Custom confirm dialog ─────────────────────────────────────────────────────
@@ -253,14 +257,18 @@ function applyTheme(theme: Theme): void {
   applyGridLineSettings();
 }
 
+function applyAccentTheme(accentTheme: AccentTheme): void {
+  document.documentElement.setAttribute('data-accent', accentTheme);
+}
+
 function applyNumpadLayout(layout: NumpadLayout): void {
-  document.documentElement.setAttribute('data-numpad-layout', nightlyModule.isActive() ? layout : 'row');
+  document.documentElement.setAttribute('data-numpad-layout', layout);
 }
 
 function applyGridLineSettings(): void {
   const root = document.documentElement;
-  const gridLineOpacity = nightlyModule.isActive() ? state.settings.gridLineOpacity : 0.14;
-  const boxLineOpacity = nightlyModule.isActive() ? state.settings.boxLineOpacity : 0.42;
+  const gridLineOpacity = state.settings.gridLineOpacity;
+  const boxLineOpacity = state.settings.boxLineOpacity;
   root.style.setProperty('--grid-line-alpha', String(gridLineOpacity));
   root.style.setProperty('--box-line-alpha', String(boxLineOpacity));
   if (el.gridLinePreview) {
@@ -269,13 +277,9 @@ function applyGridLineSettings(): void {
   }
 }
 
-function refreshNightlyFeatures(): void {
+function refreshMainFeatures(): void {
   applyNumpadLayout(state.settings.numpadLayout);
   applyGridLineSettings();
-  if (!nightlyModule.isActive()) {
-    calcExpanded = false;
-    updateCalculatorVisibility();
-  }
   if (state.screen === 'game' && state.game) {
     if (state.game.cages) setupCageCanvas(state.game, el.boardContainer.clientWidth);
     renderAllCells(state.game);
@@ -503,6 +507,10 @@ function updateLayoutMode(): void {
     side.appendChild(el.calcRow);
     side.appendChild(el.calcPad);
   } else {
+    const gameScreen = document.getElementById('screen-game')!;
+    const numpad = document.querySelector('.numpad') as HTMLElement;
+    if (el.mobileCalcWrap.parentElement !== gameScreen) gameScreen.appendChild(el.mobileCalcWrap);
+    if (el.mobileCalcWrap.nextElementSibling !== numpad) gameScreen.insertBefore(el.mobileCalcWrap, numpad);
     el.mobileCalcWrap.appendChild(el.calcRow);
     el.mobileCalcWrap.appendChild(el.calcPad);
   }
@@ -622,20 +630,37 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   const cages   = game.cages!;
   const isDark  = document.documentElement.getAttribute('data-theme') === 'dark';
 
-  const CAGE_FILLS = isDark
+  const DISTINCT_CAGE_FILLS = isDark
     ? ['rgba(129,140,248,0.12)','rgba(244,114,182,0.12)','rgba(74,222,128,0.12)','rgba(251,191,36,0.12)','rgba(45,212,191,0.12)','rgba(192,132,252,0.12)']
     : ['rgba(99,102,241,0.16)','rgba(236,72,153,0.16)','rgba(34,197,94,0.16)','rgba(245,158,11,0.16)','rgba(20,184,166,0.16)','rgba(168,85,247,0.16)'];
 
-  const CAGE_BORDERS = isDark
+  const DISTINCT_CAGE_BORDERS = isDark
     ? ['rgba(129,140,248,0.68)','rgba(244,114,182,0.68)','rgba(74,222,128,0.68)','rgba(251,191,36,0.68)','rgba(45,212,191,0.68)','rgba(192,132,252,0.68)']
     : ['rgba(99,102,241,0.62)','rgba(236,72,153,0.62)','rgba(34,197,94,0.62)','rgba(245,158,11,0.68)','rgba(20,184,166,0.62)','rgba(168,85,247,0.62)'];
-  const CAGE_BORDERS_SELECTED = isDark
+  const DISTINCT_CAGE_BORDERS_SELECTED = isDark
     ? ['rgba(129,140,248,1)','rgba(244,114,182,1)','rgba(74,222,128,1)','rgba(251,191,36,1)','rgba(45,212,191,1)','rgba(192,132,252,1)']
     : ['rgba(79,82,221,1)','rgba(210,44,140,1)','rgba(22,163,74,1)','rgba(217,119,6,1)','rgba(13,148,136,1)','rgba(147,51,234,1)'];
-  const CAGE_FILLS_SELECTED = isDark
+  const DISTINCT_CAGE_FILLS_SELECTED = isDark
     ? ['rgba(129,140,248,0.28)','rgba(244,114,182,0.28)','rgba(74,222,128,0.28)','rgba(251,191,36,0.28)','rgba(45,212,191,0.28)','rgba(192,132,252,0.28)']
     : ['rgba(99,102,241,0.30)','rgba(236,72,153,0.30)','rgba(34,197,94,0.30)','rgba(245,158,11,0.30)','rgba(20,184,166,0.30)','rgba(168,85,247,0.30)'];
-  const boxLineOpacity = nightlyModule.isActive() ? state.settings.boxLineOpacity : 0.42;
+  const accentRgbByTheme: Record<AccentTheme, string> = {
+    blue: isDark ? '129,140,248' : '99,102,241',
+    yellow: isDark ? '251,191,36' : '217,119,6',
+    red: isDark ? '248,113,113' : '220,38,38',
+    violet: isDark ? '192,132,252' : '147,51,234',
+    green: isDark ? '74,222,128' : '22,163,74',
+  };
+  const accentRgb = accentRgbByTheme[state.settings.accentTheme] ?? accentRgbByTheme.blue;
+  const accentCageFills = Array.from({ length: 6 }, () => `rgba(${accentRgb},${isDark ? 0.12 : 0.16})`);
+  const accentCageBorders = Array.from({ length: 6 }, () => `rgba(${accentRgb},${isDark ? 0.68 : 0.62})`);
+  const accentCageBordersSelected = Array.from({ length: 6 }, () => `rgba(${accentRgb},1)`);
+  const accentCageFillsSelected = Array.from({ length: 6 }, () => `rgba(${accentRgb},${isDark ? 0.28 : 0.30})`);
+  const useAccentCages = state.settings.cageColorMode === 'accent';
+  const CAGE_FILLS = useAccentCages ? accentCageFills : DISTINCT_CAGE_FILLS;
+  const CAGE_BORDERS = useAccentCages ? accentCageBorders : DISTINCT_CAGE_BORDERS;
+  const CAGE_BORDERS_SELECTED = useAccentCages ? accentCageBordersSelected : DISTINCT_CAGE_BORDERS_SELECTED;
+  const CAGE_FILLS_SELECTED = useAccentCages ? accentCageFillsSelected : DISTINCT_CAGE_FILLS_SELECTED;
+  const boxLineOpacity = state.settings.boxLineOpacity;
   const BOX_GRID = isDark
     ? `rgba(244,245,255,${boxLineOpacity})`
     : `rgba(26,27,46,${boxLineOpacity})`;
@@ -966,12 +991,14 @@ function drawBoardCanvas(game: GameState): void {
 
   const bodyStyle = getComputedStyle(document.body);
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridLineOpacity = state.settings.gridLineOpacity;
+  const boxLineOpacity = state.settings.boxLineOpacity;
   const palette = {
     cellBg: isDark ? '#1a1b2e' : '#ffffff',
-    gridLine: isDark ? 'rgba(244,245,255,0.12)' : 'rgba(26,27,46,0.14)',
-    boxLine: isDark ? 'rgba(244,245,255,0.42)' : 'rgba(26,27,46,0.42)',
+    gridLine: isDark ? `rgba(244,245,255,${gridLineOpacity})` : `rgba(26,27,46,${gridLineOpacity})`,
+    boxLine: isDark ? `rgba(244,245,255,${boxLineOpacity})` : `rgba(26,27,46,${boxLineOpacity})`,
     given: isDark ? '#e8e9f8' : '#1a1b2e',
-    user: isDark ? '#818cf8' : '#6366f1',
+    user: bodyStyle.getPropertyValue('--cell-user').trim() || (isDark ? '#818cf8' : '#6366f1'),
     error: isDark ? '#f87171' : '#dc2626',
     errorBg: isDark ? 'rgba(248,113,113,0.12)' : 'rgba(239,68,68,0.12)',
   };
@@ -1206,6 +1233,7 @@ function drawKillerSumGuides(
   // Draw memos on sumCanvas so they appear above the highlight fills
   {
     const bodyStyle = getComputedStyle(document.body);
+    const memoColor = bodyStyle.getPropertyValue('--cell-memo').trim() || (isDark ? '#a5b4fc' : '#4f46e5');
     const memoPad = Math.max(3, cellTrack * 0.14);
     const memoSlot = (cellTrack - memoPad * 2) / 3;
     ctx.save();
@@ -1218,7 +1246,7 @@ function drawKillerSumGuides(
       if (cell.value !== 0 || cell.memos.length === 0) continue;
       const mRow = (idx / 9) | 0;
       const mCol = idx % 9;
-      ctx.fillStyle = isDark ? '#a5b4fc' : '#4f46e5';
+      ctx.fillStyle = memoColor;
       for (const n of cell.memos) {
         const nr = ((n - 1) / 3) | 0;
         const nc = (n - 1) % 3;
@@ -1232,7 +1260,7 @@ function drawKillerSumGuides(
     ctx.restore();
   }
 
-  if (!drawSnapshot || !nightlyModule.isActive() || !state.settings.showKillerStats || game.type !== 'killer' || !game.cages) {
+  if (!drawSnapshot || !state.settings.showKillerStats || game.type !== 'killer' || !game.cages) {
     ctx.restore();
     return;
   }
@@ -1368,7 +1396,7 @@ function onNumInput(num: number): void {
   undoStack.push({ cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })) });
   if (undoStack.length > 50) undoStack.shift();
 
-  const newGame = setCellValue(game, game.selectedCell, num, nightlyModule.isActive());
+  const newGame = setCellValue(game, game.selectedCell, num, true);
   state.game = newGame;
 
   // Animate cell
@@ -1436,7 +1464,7 @@ function onHint(): void {
   // Turn off memo mode temporarily for hint
   const savedMemoMode = game.memoMode;
   state.game = { ...game, memoMode: false, hintCount: (game.hintCount ?? 0) + 1 };
-  const newGame = setCellValue(state.game, game.selectedCell, correct, nightlyModule.isActive());
+  const newGame = setCellValue(state.game, game.selectedCell, correct, true);
   state.game = { ...newGame, memoMode: savedMemoMode };
 
   renderAllCells(state.game);
@@ -1534,7 +1562,7 @@ function resetKillerSumOverlays(): void {
 }
 
 function updateKillerStats(game: GameState): void {
-  const isKiller = nightlyModule.isActive() && state.settings.showKillerStats && game.type === 'killer' && !!game.cages;
+  const isKiller = state.settings.showKillerStats && game.type === 'killer' && !!game.cages;
   el.killerStats.classList.add('hidden');
   if (!isKiller) {
     resetKillerSumOverlays();
@@ -1683,7 +1711,7 @@ function renderCalculator(): void {
 function updateCalculatorVisibility(): void {
   const pc = isPC();
   const landscape = isLandscape();
-  const open = calcExpanded && nightlyModule.isActive();
+  const open = calcExpanded;
 
   el.btnCalc.classList.toggle('active', calcExpanded);
   el.btnCalc.setAttribute('aria-expanded', String(calcExpanded));
@@ -1699,8 +1727,8 @@ function updateCalculatorVisibility(): void {
     el.calcRow.classList.toggle('collapsed', !calcExpanded);
     el.calcPad.classList.toggle('collapsed', !calcExpanded);
   } else {
-    // Mobile portrait: slide-up overlay, no layout shift
-    document.documentElement.removeAttribute('data-calc-open');
+    // Mobile portrait: replace the numpad area so the controls remain visible.
+    document.documentElement.toggleAttribute('data-calc-open', open);
     el.mobileCalcWrap.classList.toggle('open', open);
     el.calcRow.classList.remove('collapsed');
     el.calcPad.classList.remove('collapsed');
@@ -1779,7 +1807,7 @@ function renderHistory(): void {
     const typeLabel = record.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
     const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[record.difficulty];
     const icon = record.completed ? '✅' : '⏸';
-    const hintText = nightlyModule.isActive() && record.completed ? ` · 힌트 ${record.hintCount ?? 0}` : '';
+    const hintText = record.completed ? ` · 힌트 ${record.hintCount ?? 0}` : '';
     const date = new Date(record.date);
     const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
 
@@ -1806,16 +1834,22 @@ function syncSettingsUI(): void {
   el.toggleErrors.checked     = s.showErrors;
   el.toggleHighlights.checked = s.showHighlights;
   el.toggleHaptics.checked    = s.haptics;
-  el.toggleNightly.checked    = s.nightly || nightlyModule.isActive();
   el.toggleKillerStats.checked = s.showKillerStats;
   el.gridLineOpacity.value    = String(s.gridLineOpacity);
   el.boxLineOpacity.value     = String(s.boxLineOpacity);
   el.numpadLayoutBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.layout === s.numpadLayout);
   });
+  el.cageColorModeBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.cageColor === s.cageColorMode);
+  });
   el.themeBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === s.theme);
   });
+  el.accentThemeBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.accent === s.accentTheme);
+  });
+  applyAccentTheme(s.accentTheme);
   applyGridLineSettings();
 }
 
@@ -1839,19 +1873,15 @@ function onResize(): void {
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 export function init(): void {
+  el.appVersion.textContent = `Sudoku PWA ${__APP_VERSION__}`;
+
   // Apply theme
   applyTheme(state.settings.theme);
+  applyAccentTheme(state.settings.accentTheme);
   applyNumpadLayout(state.settings.numpadLayout);
   applyGridLineSettings();
   updateCalculatorVisibility();
-
-  // Nightly mode – activate if saved in settings OR if ?nightly is in the URL
-  const urlNightly = new URLSearchParams(location.search).has('nightly');
-  if (state.settings.nightly || urlNightly) {
-    nightlyModule.activate();
-    // URL-only activation is session-scoped; don't persist it automatically
-  }
-  refreshNightlyFeatures();
+  refreshMainFeatures();
 
   // System theme change
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -1969,9 +1999,18 @@ export function init(): void {
       syncSettingsUI();
     });
   });
+  el.cageColorModeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cageColorMode = btn.dataset.cageColor as CageColorMode;
+      state.settings = { ...state.settings, cageColorMode };
+      saveSettingsState();
+      syncSettingsUI();
+    });
+  });
   el.gridLineOpacity.addEventListener('input', () => {
     state.settings = { ...state.settings, gridLineOpacity: Number(el.gridLineOpacity.value) };
     applyGridLineSettings();
+    if (state.game && state.screen === 'game') renderAllCells(state.game);
   });
   el.gridLineOpacity.addEventListener('change', () => {
     saveSettingsState();
@@ -1979,19 +2018,11 @@ export function init(): void {
   el.boxLineOpacity.addEventListener('input', () => {
     state.settings = { ...state.settings, boxLineOpacity: Number(el.boxLineOpacity.value) };
     applyGridLineSettings();
-    if (state.game) renderAllCells(state.game);
+    if (state.game && state.screen === 'game') renderAllCells(state.game);
     if (state.screen === 'game' && state.game?.cages) setupCageCanvas(state.game, el.boardContainer.clientWidth);
   });
   el.boxLineOpacity.addEventListener('change', () => {
     saveSettingsState();
-  });
-  el.toggleNightly.addEventListener('change', () => {
-    const on = el.toggleNightly.checked;
-    state.settings = { ...state.settings, nightly: on };
-    saveSettingsState();
-    if (on) nightlyModule.activate();
-    else    nightlyModule.deactivate();
-    refreshNightlyFeatures();
   });
   el.themeBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2007,6 +2038,17 @@ export function init(): void {
       }
     });
   });
+  el.accentThemeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const accentTheme = btn.dataset.accent as AccentTheme;
+      state.settings = { ...state.settings, accentTheme };
+      saveSettingsState();
+      applyAccentTheme(accentTheme);
+      syncSettingsUI();
+      if (state.game && state.screen === 'game') renderAllCells(state.game);
+      if (state.screen === 'game' && state.game?.cages) setupCageCanvas(state.game, el.boardContainer.clientWidth);
+    });
+  });
 
   // History clear
   document.getElementById('clear-history-btn')?.addEventListener('click', () => {
@@ -2019,7 +2061,11 @@ export function init(): void {
   window.addEventListener('resize', onResize);
 
   // Prevent default scroll/zoom behaviors
-  document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  document.addEventListener('touchmove', (e) => {
+    if (state.screen === 'settings') return;
+    if (e.target instanceof HTMLInputElement && e.target.type === 'range') return;
+    e.preventDefault();
+  }, { passive: false });
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('gesturechange', (e) => e.preventDefault());

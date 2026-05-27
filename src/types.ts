@@ -5,6 +5,8 @@ export type { Difficulty, Cage };
 export type GameType = 'classic' | 'killer';
 export type Theme = 'light' | 'dark' | 'auto';
 export type NumpadLayout = 'row' | 'grid';
+export type AccentTheme = 'blue' | 'yellow' | 'red' | 'violet' | 'green';
+export type CageColorMode = 'distinct' | 'accent';
 export type Screen = 'menu' | 'game' | 'history' | 'settings';
 
 export interface CellState {
@@ -56,7 +58,8 @@ export interface AppSettings {
   showHighlights: boolean;
   haptics: boolean;
   autoAdvance: boolean;
-  nightly: boolean;
+  accentTheme: AccentTheme;
+  cageColorMode: CageColorMode;
   numpadLayout: NumpadLayout;
   gridLineOpacity: number;
   boxLineOpacity: number;
@@ -76,7 +79,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHighlights: true,
   haptics: true,
   autoAdvance: false,
-  nightly: false,
+  accentTheme: 'blue',
+  cageColorMode: 'distinct',
   numpadLayout: 'grid',
   gridLineOpacity: 0.14,
   boxLineOpacity: 0.42,
