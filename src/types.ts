@@ -77,7 +77,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   haptics: true,
   autoAdvance: false,
   nightly: false,
-  numpadLayout: 'row',
+  numpadLayout: 'grid',
   gridLineOpacity: 0.14,
   boxLineOpacity: 0.42,
   showKillerStats: true,

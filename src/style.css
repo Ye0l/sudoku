@@ -96,7 +96,7 @@
   --cell-sameval:   oklch(94% 0.035 275);
   --cell-given:     #1a1b2e;
   --cell-user:      #6366f1;
-  --cell-memo:      #888;
+  --cell-memo:      #4f46e5;
   --cell-error-bg:  rgba(239,68,68,0.12);
   --cell-error:     #dc2626;
 
@@ -143,7 +143,7 @@
   --cell-sameval:   oklch(28% 0.07 275);
   --cell-given:     #e8e9f8;
   --cell-user:      #818cf8;
-  --cell-memo:      #666;
+  --cell-memo:      #a5b4fc;
   --cell-error-bg:  rgba(248,113,113,0.12);
   --cell-error:     #f87171;
 
@@ -714,9 +714,7 @@ body {
   line-height: 1;
 }
 
-.memo-num.active { color: var(--accent); }
-.cell.hl-selected .memo-num.active { color: #1a1b2e; }
-[data-theme="dark"] .cell.hl-selected .memo-num.active { color: #f4f5ff; }
+.memo-num.active { color: var(--cell-memo); }
 
 /* Killer Sudoku: cage overlay canvas */
 .cage-canvas,
@@ -822,6 +820,27 @@ body {
   letter-spacing: 0.04em;
 }
 
+.ctrl-key {
+  display: none;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: inherit;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--text-2);
+  line-height: 1.5;
+  letter-spacing: 0;
+  margin-left: auto;
+  opacity: 0.75;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ctrl-key { display: inline-block; }
+}
+
 .line-calc {
   display: flex;
   align-items: center;
@@ -830,7 +849,7 @@ body {
   background: var(--bg-surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  max-height: 42px;
+  max-height: 56px;
   overflow: hidden;
   opacity: 1;
   transition: max-height 0.18s ease, padding 0.18s ease, opacity 0.18s ease;
@@ -847,11 +866,12 @@ body {
 .line-calc-pad {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 42px;
   gap: 4px;
   padding: 0 8px 5px;
   background: var(--bg-surface);
   flex-shrink: 0;
-  max-height: 110px;
+  max-height: 236px;
   overflow: hidden;
   opacity: 1;
   transition: max-height 0.18s ease, padding 0.18s ease, opacity 0.18s ease;
@@ -866,7 +886,8 @@ body {
 
 .line-calc-pad button,
 .line-calc-action {
-  height: 34px;
+  min-height: 0;
+  height: auto;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--bg-surface2);
@@ -874,6 +895,26 @@ body {
   font-size: 14px;
   font-weight: 900;
   cursor: pointer;
+}
+
+.line-calc-pad .calc-op,
+.line-calc-pad .calc-equals {
+  background: var(--accent);
+  color: white;
+}
+
+.line-calc-pad .calc-equals {
+  grid-column: 3;
+  grid-row: 5;
+}
+
+.line-calc-pad .calc-plus {
+  grid-column: 4;
+  grid-row: 4 / 6;
+}
+
+.line-calc-pad .calc-zero {
+  grid-column: 1 / span 2;
 }
 
 .line-calc-pad button:active,
@@ -913,6 +954,130 @@ body {
 .line-calc-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+/* ── Mobile portrait calc overlay ────────────────────────────────────────── */
+.mobile-calc-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  height: 250px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  transform: translateY(100%);
+  transition: transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.mobile-calc-wrap.open {
+  transform: translateY(0);
+}
+
+.mobile-calc-wrap .line-calc,
+.mobile-calc-wrap .line-calc.collapsed {
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 6px 8px !important;
+  border-top: none;
+}
+
+.mobile-calc-wrap .line-calc-pad,
+.mobile-calc-wrap .line-calc-pad.collapsed {
+  flex: 1 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 0 8px 6px !important;
+  grid-auto-rows: 1fr !important;
+}
+
+.mobile-calc-wrap .line-calc-pad button {
+  height: auto;
+}
+
+/* ── Floating calculator (PC mode) ───────────────────────────────────────── */
+.float-calc {
+  position: fixed;
+  z-index: 200;
+  right: 20px;
+  bottom: 80px;
+  width: 252px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  overflow: hidden;
+  opacity: 0.45;
+  transition: opacity 0.2s;
+}
+
+.float-calc:hover,
+.float-calc.dragging {
+  opacity: 1;
+}
+
+.float-calc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  cursor: grab;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.float-calc-header:active { cursor: grabbing; }
+
+.float-calc-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.float-calc-close {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.float-calc-close:hover {
+  background: var(--accent-light);
+  opacity: 1;
+}
+
+/* Override inline collapse animation inside float */
+.float-calc .line-calc,
+.float-calc .line-calc.collapsed {
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 6px 10px !important;
+  border-top: none;
+}
+
+.float-calc .line-calc-pad,
+.float-calc .line-calc-pad.collapsed {
+  max-height: none !important;
+  opacity: 1 !important;
+  padding: 0 8px 8px !important;
+  grid-auto-rows: 36px;
+}
+
+.float-calc .line-calc-pad button,
+.float-calc .line-calc-action {
+  min-height: 36px;
+  height: auto;
 }
 
 [data-calc-open] .numpad {
@@ -959,17 +1124,20 @@ body {
 
 [data-numpad-layout="grid"] .numpad {
   grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
   gap: 6px;
-  max-height: 190px;
+  height: 196px;
+  max-height: none;
 }
 
 [data-calc-open][data-numpad-layout="grid"] .numpad {
   max-height: 0;
+  height: 0;
   gap: 0;
 }
 
 [data-numpad-layout="grid"] .num-btn {
-  min-height: 52px;
+  min-height: 0;
 }
 
 .num-btn:active {
@@ -1521,13 +1689,23 @@ body {
     max-height: none;
   }
 
+  [data-numpad-layout="grid"] .numpad {
+    height: auto;
+    grid-template-rows: none;
+  }
+
+  [data-numpad-layout="grid"] .num-btn {
+    min-height: 46px;
+  }
+
   .line-calc-pad {
     grid-template-columns: repeat(4, 1fr);
     padding: 0 8px 4px;
   }
 
   .line-calc-pad button {
-    height: 34px;
+    min-height: 34px;
+    height: auto;
   }
 
   .controls-bar {

@@ -180,6 +180,7 @@
             </svg>
           </span>
           <span class="ctrl-label">되돌리기</span>
+          <kbd class="ctrl-key">U</kbd>
         </button>
         <button class="ctrl-btn" id="btn-erase" aria-label="지우기">
           <span class="ctrl-icon">
@@ -189,6 +190,7 @@
             </svg>
           </span>
           <span class="ctrl-label">지우기</span>
+          <kbd class="ctrl-key">E</kbd>
         </button>
         <button class="ctrl-btn" id="btn-memo" aria-label="메모">
           <span class="ctrl-icon">
@@ -198,6 +200,7 @@
             </svg>
           </span>
           <span class="ctrl-label">메모</span>
+          <kbd class="ctrl-key">M</kbd>
         </button>
         <button class="ctrl-btn" id="btn-hint" aria-label="힌트">
           <span class="ctrl-icon">
@@ -209,6 +212,7 @@
             <span class="hint-count nightly-only" id="hint-count">0</span>
           </span>
           <span class="ctrl-label">힌트</span>
+          <kbd class="ctrl-key">H</kbd>
         </button>
         <button class="ctrl-btn nightly-only" id="btn-calc" aria-label="계산기" aria-expanded="false">
           <span class="ctrl-icon">
@@ -219,27 +223,32 @@
             </svg>
           </span>
           <span class="ctrl-label">계산</span>
+          <kbd class="ctrl-key">C</kbd>
         </button>
       </div>
 
       <div class="line-calc nightly-only collapsed" id="line-calc">
         <input id="line-calc-input" class="line-calc-input" inputmode="none" autocomplete="off" readonly aria-label="계산기 표시" />
-        <button type="button" class="line-calc-action" data-calc="back">⌫</button>
-        <button type="button" class="line-calc-action" data-calc="clear">C</button>
       </div>
       <div class="line-calc-pad nightly-only collapsed" id="line-calc-pad">
+        <button type="button" class="line-calc-action" data-calc="clear-entry">C</button>
+        <button type="button" class="line-calc-action" data-calc="clear">AC</button>
+        <button type="button" class="line-calc-action" data-calc="back">⌫</button>
+        <button type="button" class="line-calc-action calc-op" data-calc="*">*</button>
         <button type="button" data-calc="7">7</button>
         <button type="button" data-calc="8">8</button>
         <button type="button" data-calc="9">9</button>
-        <button type="button" data-calc="+">+</button>
+        <button type="button" class="calc-op" data-calc="/">/</button>
         <button type="button" data-calc="4">4</button>
         <button type="button" data-calc="5">5</button>
         <button type="button" data-calc="6">6</button>
-        <button type="button" data-calc="-">-</button>
+        <button type="button" class="calc-op" data-calc="-">-</button>
         <button type="button" data-calc="1">1</button>
         <button type="button" data-calc="2">2</button>
         <button type="button" data-calc="3">3</button>
-        <button type="button" data-calc="0">0</button>
+        <button type="button" class="calc-op calc-plus" data-calc="+">+</button>
+        <button type="button" class="calc-zero" data-calc="0">0</button>
+        <button type="button" class="calc-equals" data-calc="=">=</button>
       </div>
 
       <!-- Number pad -->
@@ -254,6 +263,9 @@
         <button class="num-btn" data-num="8">8<span class="num-count">9</span></button>
         <button class="num-btn" data-num="9">9<span class="num-count">9</span></button>
       </div>
+
+      <!-- Mobile portrait calc overlay (managed by JS) -->
+      <div id="mobile-calc-wrap" class="mobile-calc-wrap"></div>
 
       <!-- Loading overlay -->
       <div id="loading-overlay" class="loading-overlay hidden">
@@ -437,6 +449,15 @@
           <button class="confirm-btn danger"  id="confirm-ok">확인</button>
         </div>
       </div>
+    </div>
+
+    <!-- Floating calculator (PC mode only, managed by JS) -->
+    <div id="float-calc" class="float-calc" style="display:none;">
+      <div id="float-calc-header" class="float-calc-header">
+        <span class="float-calc-title">계산기</span>
+        <button class="float-calc-close" id="float-calc-close" aria-label="닫기">✕</button>
+      </div>
+      <div id="float-calc-body" class="float-calc-body"></div>
     </div>
 
   </div><!-- #app -->

@@ -33,7 +33,7 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let confirmResolver: ((ok: boolean) => void) | null = null;
 let calcExpanded = false;
 let calcAccumulator = 0;
-let calcPendingOp: '+' | '-' | null = null;
+let calcPendingOp: '+' | '-' | '*' | '/' | null = null;
 let calcInputValue = '';
 let calcEnteringNumber = true;
 
@@ -97,6 +97,9 @@ const el = {
   calcInput:     document.getElementById('line-calc-input') as HTMLInputElement,
   calcRow:       document.getElementById('line-calc')!,
   calcPad:       document.getElementById('line-calc-pad')!,
+  floatCalc:     document.getElementById('float-calc')!,
+  floatCalcBody: document.getElementById('float-calc-body')!,
+  mobileCalcWrap:document.getElementById('mobile-calc-wrap')!,
 
   // History
   historyList:   document.getElementById('history-list')!,
@@ -138,8 +141,6 @@ const SELECTION_TRANSITION_MS = 160;
 let lastSelectionSnapshot: SelectionSnapshot | null = null;
 let selectionTransition: SelectionTransition | null = null;
 let selectionTransitionRaf: number | null = null;
-let cageAnimRafId: number | null = null;
-const CAGE_ANIM_EPOCH = performance.now();
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
@@ -483,34 +484,46 @@ function isLandscape(): boolean {
   return window.innerWidth > window.innerHeight && window.innerWidth >= 600;
 }
 
+function isPC(): boolean {
+  return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
 function updateLayoutMode(): void {
   const landscape = isLandscape();
+  const pc = isPC();
   const side = document.getElementById('game-side')!;
   const numpad = document.querySelector('.numpad') as HTMLElement;
   const controls = document.querySelector('.controls-bar') as HTMLElement;
 
-  if (landscape) {
-    side.style.display = 'flex';
-    // Move numpad and controls into side panel
-    side.appendChild(el.killerStats);
-    side.appendChild(numpad);
+  // Route calc elements to the right container for each mode
+  if (pc) {
+    el.floatCalcBody.appendChild(el.calcRow);
+    el.floatCalcBody.appendChild(el.calcPad);
+  } else if (landscape) {
     side.appendChild(el.calcRow);
     side.appendChild(el.calcPad);
+  } else {
+    el.mobileCalcWrap.appendChild(el.calcRow);
+    el.mobileCalcWrap.appendChild(el.calcPad);
+  }
+
+  if (landscape) {
+    side.style.display = 'flex';
+    side.appendChild(el.killerStats);
+    side.appendChild(numpad);
     side.appendChild(controls);
   } else {
     const gameScreen = document.getElementById('screen-game')!;
     const boardArea = el.boardContainer.parentElement!;
     side.style.display = 'none';
-    // Move back to main flow
     if (el.killerStats.parentElement !== gameScreen) gameScreen.insertBefore(el.killerStats, boardArea);
-    if (el.calcRow.parentElement !== gameScreen) gameScreen.appendChild(el.calcRow);
-    if (el.calcPad.parentElement !== gameScreen) gameScreen.appendChild(el.calcPad);
     if (numpad.parentElement !== gameScreen) gameScreen.appendChild(numpad);
     if (controls.parentElement !== gameScreen) {
-      // Insert before numpad
       gameScreen.insertBefore(controls, numpad);
     }
   }
+
+  updateCalculatorVisibility();
 }
 
 function renderBoard(game: GameState): void {
@@ -577,11 +590,6 @@ function renderBoard(game: GameState): void {
 }
 
 function setupCageCanvas(game: GameState, boardPx: number): void {
-  if (cageAnimRafId !== null) {
-    cancelAnimationFrame(cageAnimRafId);
-    cageAnimRafId = null;
-  }
-
   const canvas = el.cageCanvas;
   const lineCanvas = el.cageLineCanvas;
   const canvasPad = parseFloat(el.boardContainer.style.getPropertyValue('--board-pad')) || 0;
@@ -893,7 +901,7 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     lineCtx.restore();
   };
 
-  // Draw static content (box grid + all non-animated cages) once.
+  // Draw static content (box grid + all cages) once.
   lineCtx.clearRect(0, 0, canvasPx, canvasPx);
   lineCtx.lineCap = 'round';
   lineCtx.lineJoin = 'round';
@@ -903,9 +911,10 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   lineCtx.shadowColor = 'transparent';
   strokeBoxGrid();
   cages.forEach(cage => {
-    if (cage === selectedCage) return;
-    lineCtx.strokeStyle = CAGE_BORDERS[cage.colorIndex];
-    lineCtx.fillStyle = CAGE_BORDERS[cage.colorIndex];
+    const selected = cage === selectedCage;
+    lineCtx.lineWidth = selected ? Math.max(2, cellTrack * 0.048) : Math.max(1.5, cellTrack * 0.035);
+    lineCtx.strokeStyle = selected ? CAGE_BORDERS_SELECTED[cage.colorIndex] : CAGE_BORDERS[cage.colorIndex];
+    lineCtx.fillStyle = selected ? CAGE_BORDERS_SELECTED[cage.colorIndex] : CAGE_BORDERS[cage.colorIndex];
     strokeDashedCageOutline(new Set(cage.cells), 0);
   });
   clearLabels();
@@ -925,32 +934,6 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     label.style.top  = (y + cageInset - 4) + 'px';
     el.boardContainer.appendChild(label);
   });
-
-  if (selectedCage) {
-    // Save static frame as pixel data so the RAF loop only redraws the one animated cage.
-    const staticImageData = lineCtx.getImageData(0, 0, lineCanvas.width, lineCanvas.height);
-
-    const dashLen = Math.max(2, cellTrack * 0.045);
-    const gapLen = Math.max(2.5, cellTrack * 0.055);
-    const totalPattern = dashLen + gapLen;
-    const SPEED = 20; // px/sec
-
-    const animate = (timestamp: number) => {
-      const offset = ((timestamp - CAGE_ANIM_EPOCH) * SPEED / 1000) % totalPattern;
-
-      lineCtx.putImageData(staticImageData, 0, 0);
-      lineCtx.lineCap = 'round';
-      lineCtx.lineJoin = 'round';
-      lineCtx.lineWidth = Math.max(2, cellTrack * 0.048);
-      lineCtx.strokeStyle = CAGE_BORDERS_SELECTED[selectedCage.colorIndex];
-      lineCtx.fillStyle = CAGE_BORDERS_SELECTED[selectedCage.colorIndex];
-      strokeDashedCageOutline(new Set(selectedCage.cells), offset);
-      clearLabels();
-
-      cageAnimRafId = requestAnimationFrame(animate);
-    };
-    cageAnimRafId = requestAnimationFrame(animate);
-  }
 }
 
 function renderAllCells(game: GameState): void {
@@ -1061,32 +1044,6 @@ function drawBoardCanvas(game: GameState): void {
   }
   ctx.restore();
 
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const memoPad = Math.max(3, cellTrack * 0.14);
-  const memoSlot = (cellTrack - memoPad * 2) / 3;
-  ctx.font = `600 ${Math.round(memoSlot * 0.62)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
-  for (let idx = 0; idx < 81; idx++) {
-    const cell = game.cells[idx];
-    if (cell.value !== 0 || cell.memos.length === 0) continue;
-    const row = (idx / 9) | 0;
-    const col = idx % 9;
-    const isSelected = state.settings.showHighlights && idx === game.selectedCell;
-    ctx.fillStyle = isSelected
-      ? (isDark ? '#f4f5ff' : '#1a1b2e')
-      : palette.user;
-    for (const n of cell.memos) {
-      const mRow = ((n - 1) / 3) | 0;
-      const mCol = (n - 1) % 3;
-      ctx.fillText(
-        String(n),
-        cellStart(col) + memoPad + (mCol + 0.5) * memoSlot,
-        cellStart(row) + memoPad + (mRow + 0.5) * memoSlot,
-      );
-    }
-  }
-  ctx.restore();
 }
 
 function drawKillerSumGuides(
@@ -1106,7 +1063,6 @@ function drawKillerSumGuides(
 
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const accent = isDark ? 'rgba(251,191,36,0.9)' : 'rgba(217,119,6,0.9)';
-  const selectedFill = isDark ? 'rgba(129,140,248,0.42)' : 'rgba(99,102,241,0.32)';
   const peerFill = isDark ? 'rgba(129,140,248,0.18)' : 'rgba(99,102,241,0.14)';
 
   ctx.save();
@@ -1193,8 +1149,8 @@ function drawKillerSumGuides(
   if (selectionTransition) {
     const rawProgress = Math.min(1, (now - selectionTransition.start) / SELECTION_TRANSITION_MS);
     const progress = ease(rawProgress);
-    const from = selectionTransition.from ?? selectionTransition.to;
-    const to = selectionTransition.to ?? selectionTransition.from;
+    const from = selectionTransition.from;
+    const to = selectionTransition.to;
 
     if (from && to) {
       drawSnapshot = {
@@ -1204,8 +1160,14 @@ function drawKillerSumGuides(
         boxRow: lerp(from.boxRow, to.boxRow, progress),
         boxCol: lerp(from.boxCol, to.boxCol, progress),
       };
+      drawAlpha = 1;
+    } else if (to) {
+      drawSnapshot = to;
+      drawAlpha = progress;
+    } else if (from) {
+      drawSnapshot = from;
+      drawAlpha = 1 - progress;
     }
-    drawAlpha = selectionTransition.to ? progress : 1 - progress;
     rowAlpha = from && to && from.row === to.row ? 1 : drawAlpha;
     colAlpha = from && to && from.col === to.col ? 1 : drawAlpha;
     boxAlpha = from && to && from.boxRow === to.boxRow && from.boxCol === to.boxCol ? 1 : drawAlpha;
@@ -1215,34 +1177,62 @@ function drawKillerSumGuides(
     else selectionTransition = null;
   }
 
-  if (!drawSnapshot) {
-    ctx.restore();
-    return;
-  }
-
   const rowX = cellStart(0);
-  const rowY = cellStart(drawSnapshot.row);
-  const colX = cellStart(drawSnapshot.col);
+  const rowY = drawSnapshot ? cellStart(drawSnapshot.row) : 0;
+  const colX = drawSnapshot ? cellStart(drawSnapshot.col) : 0;
   const colY = cellStart(0);
-  const boxX = cellStart(drawSnapshot.boxCol);
-  const boxY = cellStart(drawSnapshot.boxRow);
+  const boxX = drawSnapshot ? cellStart(drawSnapshot.boxCol) : 0;
+  const boxY = drawSnapshot ? cellStart(drawSnapshot.boxRow) : 0;
 
-  if (state.settings.showHighlights) {
+  if (state.settings.showHighlights && drawSnapshot) {
+    const sc = drawSnapshot.col;
+    const sr = drawSnapshot.row;
     ctx.save();
-    ctx.globalAlpha = rowAlpha;
     ctx.fillStyle = peerFill;
-    ctx.fillRect(rowX, rowY, cellSpan(9), cellTrack);
+    ctx.globalAlpha = rowAlpha;
+    // Draw row in two halves, skipping the column intersection to prevent double-paint
+    if (sc > 0) ctx.fillRect(cellStart(0), rowY, cellStart(sc) - cellStart(0), cellTrack);
+    if (sc < 8) ctx.fillRect(cellStart(sc + 1), rowY, cellStart(0) + cellSpan(9) - cellStart(sc + 1), cellTrack);
     ctx.globalAlpha = colAlpha;
-    ctx.fillRect(colX, colY, cellTrack, cellSpan(9));
-    ctx.globalAlpha = boxAlpha;
-    ctx.fillRect(boxX, boxY, cellSpan(3), cellSpan(3));
+    // Draw column in two halves too, so the selected cell has the same single-pass fill.
+    if (sr > 0) ctx.fillRect(colX, cellStart(0), cellTrack, cellStart(sr) - cellStart(0));
+    if (sr < 8) ctx.fillRect(colX, cellStart(sr + 1), cellTrack, cellStart(0) + cellSpan(9) - cellStart(sr + 1));
     ctx.globalAlpha = selectedAlpha;
-    ctx.fillStyle = selectedFill;
-    ctx.fillRect(cellStart(drawSnapshot.col), cellStart(drawSnapshot.row), cellTrack, cellTrack);
+    ctx.fillStyle = peerFill;
+    ctx.fillRect(cellStart(sc), cellStart(sr), cellTrack, cellTrack);
     ctx.restore();
   }
 
-  if (!nightlyModule.isActive() || !state.settings.showKillerStats || game.type !== 'killer' || !game.cages) {
+  // Draw memos on sumCanvas so they appear above the highlight fills
+  {
+    const bodyStyle = getComputedStyle(document.body);
+    const memoPad = Math.max(3, cellTrack * 0.14);
+    const memoSlot = (cellTrack - memoPad * 2) / 3;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 1;
+    ctx.font = `600 ${Math.round(memoSlot * 0.62)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
+    for (let idx = 0; idx < 81; idx++) {
+      const cell = game.cells[idx];
+      if (cell.value !== 0 || cell.memos.length === 0) continue;
+      const mRow = (idx / 9) | 0;
+      const mCol = idx % 9;
+      ctx.fillStyle = isDark ? '#a5b4fc' : '#4f46e5';
+      for (const n of cell.memos) {
+        const nr = ((n - 1) / 3) | 0;
+        const nc = (n - 1) % 3;
+        ctx.fillText(
+          String(n),
+          cellStart(mCol) + memoPad + (nc + 0.5) * memoSlot,
+          cellStart(mRow) + memoPad + (nr + 0.5) * memoSlot,
+        );
+      }
+    }
+    ctx.restore();
+  }
+
+  if (!drawSnapshot || !nightlyModule.isActive() || !state.settings.showKillerStats || game.type !== 'killer' || !game.cages) {
     ctx.restore();
     return;
   }
@@ -1369,6 +1359,8 @@ function onNumInput(num: number): void {
 
   const cell = game.cells[game.selectedCell];
   if (cell.given) return;
+
+  if (!game.memoMode && cell.value === num) { onErase(); return; }
 
   haptic('medium');
 
@@ -1583,12 +1575,16 @@ function scheduleSave(game: GameState): void {
 function onCalcButton(action: string): void {
   if (action === 'clear') {
     clearCalculator();
+  } else if (action === 'clear-entry') {
+    clearCalculatorEntry();
   } else if (action === 'back') {
     backspaceCalculator();
   } else if (/^\d$/.test(action)) {
     appendCalculatorDigit(action);
-  } else if (action === '+' || action === '-') {
+  } else if (isCalculatorOperator(action)) {
     applyCalculatorOperator(action);
+  } else if (action === '=') {
+    finishCalculator();
   }
   renderCalculator();
 }
@@ -1601,13 +1597,41 @@ function appendCalculatorDigit(digit: string): void {
   calcInputValue = calcInputValue === '0' ? digit : calcInputValue + digit;
 }
 
-function applyCalculatorOperator(op: '+' | '-'): void {
+function applyCalculatorPending(current: number): number {
+  if (calcPendingOp === '+') return calcAccumulator + current;
+  if (calcPendingOp === '-') return calcAccumulator - current;
+  if (calcPendingOp === '*') return calcAccumulator * current;
+  if (calcPendingOp === '/') return current === 0 ? NaN : calcAccumulator / current;
+  return current;
+}
+
+function isCalculatorOperator(action: string): action is '+' | '-' | '*' | '/' {
+  return action === '+' || action === '-' || action === '*' || action === '/';
+}
+
+function applyCalculatorOperator(op: '+' | '-' | '*' | '/'): void {
+  if (!calcEnteringNumber && calcPendingOp !== null) {
+    calcPendingOp = op;
+    return;
+  }
+
   const current = calcInputValue === '' ? calcAccumulator : Number(calcInputValue);
-  if (calcPendingOp === '+') calcAccumulator += current;
-  else if (calcPendingOp === '-') calcAccumulator -= current;
-  else calcAccumulator = current;
+  calcAccumulator = applyCalculatorPending(current);
 
   calcPendingOp = op;
+  calcInputValue = String(calcAccumulator);
+  calcEnteringNumber = false;
+}
+
+function finishCalculator(): void {
+  if (calcPendingOp === null) {
+    calcEnteringNumber = false;
+    return;
+  }
+
+  const current = calcInputValue === '' ? calcAccumulator : Number(calcInputValue);
+  calcAccumulator = applyCalculatorPending(current);
+  calcPendingOp = null;
   calcInputValue = String(calcAccumulator);
   calcEnteringNumber = false;
 }
@@ -1620,9 +1644,34 @@ function backspaceCalculator(): void {
   calcInputValue = calcInputValue.slice(0, -1);
 }
 
+function onCalculatorKeydown(e: KeyboardEvent): void {
+  const keyMap: Record<string, string> = {
+    Enter: '=',
+    '=': '=',
+    '+': '+',
+    '-': '-',
+    '*': '*',
+    '/': '/',
+    x: '*',
+    X: '*',
+    Backspace: 'back',
+    Delete: 'clear-entry',
+    Escape: 'clear',
+  };
+  const action = /^\d$/.test(e.key) ? e.key : keyMap[e.key];
+  if (!action) return;
+  e.preventDefault();
+  onCalcButton(action);
+}
+
 function clearCalculator(): void {
   calcAccumulator = 0;
   calcPendingOp = null;
+  calcInputValue = '';
+  calcEnteringNumber = true;
+}
+
+function clearCalculatorEntry(): void {
   calcInputValue = '';
   calcEnteringNumber = true;
 }
@@ -1632,16 +1681,70 @@ function renderCalculator(): void {
 }
 
 function updateCalculatorVisibility(): void {
-  document.documentElement.toggleAttribute('data-calc-open', calcExpanded && nightlyModule.isActive());
+  const pc = isPC();
+  const landscape = isLandscape();
+  const open = calcExpanded && nightlyModule.isActive();
+
   el.btnCalc.classList.toggle('active', calcExpanded);
   el.btnCalc.setAttribute('aria-expanded', String(calcExpanded));
-  el.calcRow.classList.toggle('collapsed', !calcExpanded);
-  el.calcPad.classList.toggle('collapsed', !calcExpanded);
+
+  if (pc) {
+    document.documentElement.removeAttribute('data-calc-open');
+    el.floatCalc.style.display = open ? 'block' : 'none';
+    el.calcRow.classList.remove('collapsed');
+    el.calcPad.classList.remove('collapsed');
+  } else if (landscape) {
+    // Side panel: collapse numpad to make room
+    document.documentElement.toggleAttribute('data-calc-open', open);
+    el.calcRow.classList.toggle('collapsed', !calcExpanded);
+    el.calcPad.classList.toggle('collapsed', !calcExpanded);
+  } else {
+    // Mobile portrait: slide-up overlay, no layout shift
+    document.documentElement.removeAttribute('data-calc-open');
+    el.mobileCalcWrap.classList.toggle('open', open);
+    el.calcRow.classList.remove('collapsed');
+    el.calcPad.classList.remove('collapsed');
+  }
 }
 
 function toggleCalculator(): void {
   calcExpanded = !calcExpanded;
   updateCalculatorVisibility();
+}
+
+function setupFloatCalcDrag(): void {
+  const header = document.getElementById('float-calc-header')!;
+  let dragging = false;
+  let ox = 0, oy = 0, ol = 0, ot = 0;
+
+  header.addEventListener('mousedown', (e) => {
+    if ((e.target as HTMLElement).closest('.float-calc-close')) return;
+    dragging = true;
+    const rect = el.floatCalc.getBoundingClientRect();
+    ox = e.clientX; oy = e.clientY;
+    ol = rect.left; ot = rect.top;
+    el.floatCalc.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    el.floatCalc.style.left = (ol + e.clientX - ox) + 'px';
+    el.floatCalc.style.top = (ot + e.clientY - oy) + 'px';
+    el.floatCalc.style.right = 'auto';
+    el.floatCalc.style.bottom = 'auto';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    el.floatCalc.classList.remove('dragging');
+  });
+
+  document.getElementById('float-calc-close')?.addEventListener('click', () => {
+    calcExpanded = false;
+    updateCalculatorVisibility();
+  });
 }
 
 // ── Haptics ───────────────────────────────────────────────────────────────────
@@ -1794,9 +1897,11 @@ export function init(): void {
   el.btnMemo.addEventListener('click',  onToggleMemo);
   el.btnHint.addEventListener('click',  onHint);
   el.btnCalc.addEventListener('click', toggleCalculator);
+  el.calcInput.addEventListener('keydown', onCalculatorKeydown);
   document.querySelectorAll<HTMLButtonElement>('[data-calc]').forEach(btn => {
     btn.addEventListener('click', () => onCalcButton(btn.dataset.calc ?? ''));
   });
+  setupFloatCalcDrag();
 
   // Keyboard support
   document.addEventListener('keydown', (e) => {
@@ -1804,9 +1909,12 @@ export function init(): void {
     if (state.screen !== 'game') return;
     const key = e.key;
     if (key >= '1' && key <= '9') { onNumInput(parseInt(key)); return; }
-    if (key === 'Backspace' || key === 'Delete' || key === '0') { onErase(); return; }
+    if (key === 'Backspace' || key === 'Delete' || key === '0' || key === 'e' || key === 'E') { onErase(); return; }
     if (key === 'z' && (e.ctrlKey || e.metaKey)) { onUndo(); return; }
+    if ((key === 'u' || key === 'U') && !e.ctrlKey && !e.metaKey) { onUndo(); return; }
     if (key === 'm' || key === 'M') { onToggleMemo(); return; }
+    if (key === 'h' || key === 'H') { onHint(); return; }
+    if (key === 'c' || key === 'C') { toggleCalculator(); return; }
     const game = state.game;
     if (!game) return;
     let next = game.selectedCell;
