@@ -56,6 +56,7 @@ export interface AppSettings {
   theme: Theme;
   showErrors: boolean;
   showHighlights: boolean;
+  showHintButton: boolean;
   haptics: boolean;
   autoAdvance: boolean;
   accentTheme: AccentTheme;
@@ -76,6 +77,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
   showErrors: true,
   showHighlights: true,
+  showHintButton: true,
   haptics: true,
   autoAdvance: false,
   accentTheme: 'blue',

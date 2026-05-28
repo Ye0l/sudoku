@@ -103,6 +103,7 @@ const el = {
   // Settings
   toggleErrors:    document.getElementById('toggle-errors') as HTMLInputElement,
   toggleHighlights:document.getElementById('toggle-highlights') as HTMLInputElement,
+  toggleHintButton:document.getElementById('toggle-hint-button') as HTMLInputElement,
   toggleHaptics:   document.getElementById('toggle-haptics') as HTMLInputElement,
   accentThemeBtns:document.querySelectorAll<HTMLButtonElement>('.accent-theme-btn'),
   gridLineOpacity: document.getElementById('grid-line-opacity') as HTMLInputElement,
@@ -996,7 +997,7 @@ function drawBoardCanvas(game: GameState): void {
   ctx.strokeStyle = palette.gridLine;
   ctx.lineWidth = 1;
   for (let line = 0; line <= 9; line++) {
-    const p = Math.round(cellStart(line)) + 0.5;
+    const p = line === 9 ? boardPad + boardPx - 0.5 : Math.round(cellStart(line)) + 0.5;
     ctx.beginPath();
     if (line > 0 && line < 9) {
       ctx.moveTo(p, boardPad);
@@ -1076,15 +1077,16 @@ function drawKillerSumGuides(
     ctx.restore();
   }
 
-  // Draw memos inside cage-inset boundary (same inset as dashed cage borders)
+  // Draw memos in a compact centered block so killer cage labels stay clear.
   const bodyStyle = getComputedStyle(document.body);
   const memoColor = bodyStyle.getPropertyValue('--cell-memo').trim() || (isDark ? '#a5b4fc' : '#4f46e5');
-  const memoPad = Math.max(4, Math.round(cellTrack * 0.1));
-  const memoSlot = (cellTrack - memoPad * 2) / 3;
+  const memoBlock = cellTrack * 0.64;
+  const memoPad = (cellTrack - memoBlock) / 2;
+  const memoSlot = memoBlock / 3;
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `600 ${Math.round(memoSlot * 0.92)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
+  ctx.font = `700 ${Math.round(memoSlot * 0.86)}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
   for (let idx = 0; idx < 81; idx++) {
     const cell = game.cells[idx];
     if (cell.value !== 0 || cell.memos.length === 0) continue;
@@ -1308,6 +1310,10 @@ function updateHintCount(game: GameState): void {
   el.hintCount.textContent = String(game.hintCount ?? 0);
 }
 
+function updateHintButtonVisibility(): void {
+  el.btnHint.hidden = !state.settings.showHintButton;
+}
+
 function updateKillerStats(game: GameState): void {
   if (game.cages) setupCageCanvas(game, getInnerBoardPx());
   drawBoardCanvas(game);
@@ -1463,6 +1469,10 @@ function updateCalculatorVisibility(): void {
     el.calcRow.classList.remove('collapsed');
     el.calcPad.classList.remove('collapsed');
   }
+
+  if (state.screen === 'game' && state.game) {
+    requestAnimationFrame(() => renderBoard(state.game!));
+  }
 }
 
 function toggleCalculator(): void {
@@ -1563,6 +1573,7 @@ function syncSettingsUI(): void {
   const s = state.settings;
   el.toggleErrors.checked     = s.showErrors;
   el.toggleHighlights.checked = s.showHighlights;
+  el.toggleHintButton.checked = s.showHintButton;
   el.toggleHaptics.checked    = s.haptics;
   el.gridLineOpacity.value    = String(s.gridLineOpacity);
   el.boxLineOpacity.value     = String(s.boxLineOpacity);
@@ -1580,6 +1591,7 @@ function syncSettingsUI(): void {
   });
   applyAccentTheme(s.accentTheme);
   applyGridLineSettings();
+  updateHintButtonVisibility();
 }
 
 function saveSettingsState(): void {
@@ -1716,6 +1728,11 @@ export function init(): void {
     state.settings = { ...state.settings, showHighlights: el.toggleHighlights.checked };
     saveSettingsState();
     if (state.game) renderAllCells(state.game);
+  });
+  el.toggleHintButton.addEventListener('change', () => {
+    state.settings = { ...state.settings, showHintButton: el.toggleHintButton.checked };
+    saveSettingsState();
+    updateHintButtonVisibility();
   });
   el.toggleHaptics.addEventListener('change', () => {
     state.settings = { ...state.settings, haptics: el.toggleHaptics.checked };
