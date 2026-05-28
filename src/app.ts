@@ -10,6 +10,7 @@ import {
   startTimer, stopTimer, formatTime, getElapsed,
 } from './game.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
+import { createId } from './id.ts';
 
 // Worker is loaded via Vite's ?worker suffix at runtime
 const createPuzzleWorker = (): Worker =>
@@ -320,7 +321,7 @@ function fillPuzzleCache(type: GameType, diff: Difficulty): void {
   cacheFillInProgress.add(key);
 
   const worker = createPuzzleWorker();
-  const id = crypto.randomUUID();
+  const id = createId();
 
   worker.onmessage = (e: MessageEvent) => {
     if (e.data.id !== id) return;
@@ -353,7 +354,7 @@ function generatePuzzle(type: GameType, diff: Difficulty): Promise<GameState> {
 
     const worker = createPuzzleWorker();
     pendingWorker = worker;
-    const id = crypto.randomUUID();
+    const id = createId();
 
     worker.onmessage = (e: MessageEvent) => {
       if (e.data.id !== id) return;
@@ -512,11 +513,14 @@ function renderBoard(game: GameState): void {
   // Measure .board-area (grandparent of board-grid), not board-container.
   // board-container has no CSS dimensions so its clientWidth/Height is 0.
   const area     = el.boardGrid.parentElement!.parentElement!;
-  const maxSize  = Math.min(area.clientWidth - 16, area.clientHeight - 16) - 4;
+  const compactBoard = window.matchMedia('(max-width: 599px), (orientation: portrait)').matches;
+  const horizontalPad = compactBoard ? 0 : 16;
+  const verticalPad = compactBoard ? 12 : 16;
+  const maxSize  = Math.min(area.clientWidth - horizontalPad, area.clientHeight - verticalPad);
   const size     = Math.max(200, maxSize);
   const boardPad = 0;
-  const cellSize = Math.floor(size / 9);
-  const boardPx  = cellSize * 9;
+  const cellSize = size / 9;
+  const boardPx  = size;
   const canvasPx = boardPx;
 
   container.style.width  = canvasPx + 'px';
@@ -665,8 +669,6 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
   const labelFontSize = Math.max(9, Math.round(cellTrack * 0.21));
   const labelFontFamily = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
   const labelFont = `700 ${labelFontSize}px ${labelFontFamily}`;
-  const activeLabelFontSize = Math.max(10, Math.round(cellTrack * 0.15));
-  const activeLabelFont = `900 ${activeLabelFontSize}px ${labelFontFamily}`;
   const labelClearPadX = Math.max(2, Math.round(cellTrack * 0.055));
   const labelClearPadY = Math.max(2, Math.round(cellTrack * 0.045));
   const labelRadius = Math.max(3, Math.round(cellTrack * 0.07));
@@ -917,25 +919,14 @@ function setupCageCanvas(game: GameState, boardPx: number): void {
     const col = labelCell % 9;
     const labelX = cellStartCoord(col) + cageInset + 1;
     const labelY = cellStartCoord(row) + cageInset - 4;
-    const selected = cage === selectedCage;
     const text = String(cage.sum);
 
     lineCtx.save();
     lineCtx.textAlign = 'left';
     lineCtx.textBaseline = 'top';
-    if (selected) {
-      lineCtx.font = activeLabelFont;
-      lineCtx.lineJoin = 'round';
-      lineCtx.lineWidth = Math.max(2.5, cellTrack * 0.075);
-      lineCtx.strokeStyle = isDark ? 'rgba(244,245,255,0.92)' : 'rgba(26,27,46,0.86)';
-      lineCtx.strokeText(text, labelX, labelY);
-      lineCtx.fillStyle = isDark ? '#0f0f1a' : '#ffffff';
-      lineCtx.fillText(text, labelX, labelY);
-    } else {
-      lineCtx.font = labelFont;
-      lineCtx.fillStyle = isDark ? '#9a9bca' : '#5a5b6a';
-      lineCtx.fillText(text, labelX, labelY);
-    }
+    lineCtx.font = labelFont;
+    lineCtx.fillStyle = isDark ? '#9a9bca' : '#5a5b6a';
+    lineCtx.fillText(text, labelX, labelY);
     lineCtx.restore();
   });
 }
@@ -1007,8 +998,10 @@ function drawBoardCanvas(game: GameState): void {
   for (let line = 0; line <= 9; line++) {
     const p = Math.round(cellStart(line)) + 0.5;
     ctx.beginPath();
-    ctx.moveTo(p, boardPad);
-    ctx.lineTo(p, boardPad + boardPx);
+    if (line > 0 && line < 9) {
+      ctx.moveTo(p, boardPad);
+      ctx.lineTo(p, boardPad + boardPx);
+    }
     ctx.moveTo(boardPad, p);
     ctx.lineTo(boardPad + boardPx, p);
     ctx.stroke();
@@ -1597,7 +1590,13 @@ function saveSettingsState(): void {
 
 let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
+function syncViewportHeight(): void {
+  const height = window.visualViewport?.height ?? window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', `${height}px`);
+}
+
 function onResize(): void {
+  syncViewportHeight();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (state.screen === 'game' && state.game) {
@@ -1610,6 +1609,7 @@ function onResize(): void {
 
 export function init(): void {
   el.appVersion.textContent = `Sudoku PWA ${__APP_VERSION__}`;
+  syncViewportHeight();
 
   // Apply theme
   applyTheme(state.settings.theme);
@@ -1790,6 +1790,8 @@ export function init(): void {
 
   // Resize
   window.addEventListener('resize', onResize);
+  window.visualViewport?.addEventListener('resize', onResize);
+  window.visualViewport?.addEventListener('scroll', onResize);
 
   // Prevent default scroll/zoom behaviors
   document.addEventListener('touchmove', (e) => {

@@ -4,6 +4,7 @@ import type { GameState, CellState, GameType, Difficulty, HistoryRecord } from '
 import { saveGame, addHistory } from './storage.ts';
 import type { Cage } from './engine/killer.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
+import { createId } from './id.ts';
 
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -24,7 +25,7 @@ export function createGame(
   cages?: Cage[],
 ): GameState {
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     type,
     difficulty,
     cells: createCells(board),

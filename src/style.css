@@ -28,6 +28,12 @@
   --radius:       12px;
   --radius-sm:    8px;
   --mobile-input-panel-height: 239px;
+  --mobile-numpad-row-height: clamp(63px, 8dvh, 69px);
+  --mobile-numpad-grid-height: calc(var(--mobile-numpad-row-height) * 3);
+  --safe-top-ui: max(0px, calc(env(safe-area-inset-top, 0px) - 8px));
+  --bottom-ui-pad: max(18px, calc(env(safe-area-inset-bottom, 0px) - 4px));
+  --numpad-key-top-pad: 8px;
+  --bottom-corner-radius: max(var(--radius-sm), calc(env(safe-area-inset-bottom, 0px) * 0.55));
 
   /* Cell colors */
   --cell-bg:        #ffffff;
@@ -185,12 +191,12 @@
 
 html, body {
   width: 100%;
-  height: 100%;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -200,9 +206,11 @@ html, body {
 
 body {
   position: fixed;
-  inset: 0;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--app-height, 100dvh);
+  padding: 0;
 }
 
 .nav-header,
@@ -273,8 +281,11 @@ body {
 .nav-header {
   display: flex;
   align-items: center;
-  height: 52px;
-  padding: 0 8px;
+  height: calc(52px + var(--safe-top-ui));
+  padding: var(--safe-top-ui)
+           max(8px, env(safe-area-inset-right, 0px))
+           0
+           max(8px, env(safe-area-inset-left, 0px));
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -525,7 +536,7 @@ body {
 }
 
 .game-info {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
   font-weight: 600;
   text-transform: uppercase;
@@ -542,14 +553,14 @@ body {
 
 .game-title-timer {
   color: var(--text-3);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
 }
 
 .game-mistakes {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
   display: flex;
@@ -574,6 +585,13 @@ body {
   padding: 8px;
   min-height: 0;
   overflow: hidden;
+}
+
+@media (max-width: 599px), (orientation: portrait) {
+  .board-area {
+    align-items: flex-end;
+    padding: 6px 0;
+  }
 }
 
 .board-container {
@@ -606,7 +624,7 @@ body {
   z-index: 1;
   width: 100%;
   height: 100%;
-  border-radius: 4px;
+  border-radius: 0;
   pointer-events: none;
 }
 
@@ -676,7 +694,7 @@ body {
 }
 
 .cell-value {
-  font-size: calc(var(--cell-size, 38px) * 0.52);
+  font-size: calc(var(--cell-size, 38px) * 0.58);
   font-weight: 700;
   line-height: 1;
   pointer-events: none;
@@ -702,8 +720,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(var(--cell-size, 38px) * 0.20);
-  font-weight: 600;
+  font-size: calc(var(--cell-size, 38px) * 0.23);
+  font-weight: 700;
   color: var(--cell-memo);
   line-height: 1;
 }
@@ -733,9 +751,12 @@ body {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 6px 8px;
+  padding: 6px max(8px, env(safe-area-inset-right, 0px))
+           6px max(8px, env(safe-area-inset-left, 0px));
   background: var(--bg-surface);
   border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -766,7 +787,7 @@ body {
 }
 
 .ctrl-icon {
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
   position: relative;
   display: inline-flex;
@@ -782,7 +803,7 @@ body {
   border-radius: 999px;
   background: var(--accent);
   color: white;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   line-height: 16px;
   text-align: center;
@@ -790,8 +811,8 @@ body {
 }
 
 .ctrl-label {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -868,7 +889,7 @@ body {
   border-radius: var(--radius-sm);
   background: var(--bg-surface2);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 900;
   cursor: pointer;
 }
@@ -902,7 +923,7 @@ body {
 
 .line-calc-label {
   color: var(--text-2);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -915,7 +936,7 @@ body {
   border-radius: var(--radius-sm);
   background: var(--bg-surface2);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -932,36 +953,39 @@ body {
   box-shadow: 0 0 0 2px var(--accent-light);
 }
 
-/* ── Mobile portrait calc overlay ────────────────────────────────────────── */
+/* ── Mobile portrait calc panel ──────────────────────────────────────────── */
 .mobile-calc-wrap {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--mobile-input-panel-height);
+  position: relative;
+  flex-shrink: 0;
+  height: 0;
+  max-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
   border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0 0 var(--bottom-corner-radius) var(--bottom-corner-radius);
   overflow: hidden;
-  z-index: 50;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(100%);
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  transition: max-height 0.18s ease, opacity 0.18s ease;
 }
 
 .mobile-calc-wrap.open {
+  height: var(--mobile-input-panel-height);
+  max-height: var(--mobile-input-panel-height);
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
 }
 
 .mobile-calc-wrap .line-calc,
 .mobile-calc-wrap .line-calc.collapsed {
   max-height: none !important;
   opacity: 1 !important;
-  padding: 6px 8px !important;
+  padding: 6px max(8px, env(safe-area-inset-right, 0px))
+           6px max(8px, env(safe-area-inset-left, 0px)) !important;
   border-top: none;
 }
 
@@ -970,7 +994,9 @@ body {
   flex: 0 0 auto !important;
   max-height: none !important;
   opacity: 1 !important;
-  padding: 0 8px 6px !important;
+  padding: 0 max(8px, env(safe-area-inset-right, 0px))
+           var(--bottom-ui-pad)
+           max(8px, env(safe-area-inset-left, 0px)) !important;
   grid-auto-rows: 34px !important;
 }
 
@@ -1065,49 +1091,96 @@ body {
   pointer-events: none;
 }
 
+[data-calc-open] #screen-game > .numpad {
+  height: 0 !important;
+  max-height: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 /* ============================================================
    Number Pad
    ============================================================ */
 .numpad {
   display: grid;
   grid-template-columns: repeat(9, 1fr);
-  gap: 4px;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  gap: 0;
+  padding: 0;
   background: var(--bg-surface);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
   max-height: var(--mobile-input-panel-height);
   opacity: 1;
   overflow: hidden;
-  transition: max-height 0.18s ease, padding 0.18s ease, opacity 0.18s ease;
+  transition: max-height 0.18s ease, opacity 0.18s ease;
 }
 
 .num-btn {
   min-height: 46px;
-  background: var(--bg-surface2);
+  padding: 0;
+  background: var(--bg-surface);
   border: none;
-  border-radius: var(--radius-sm);
-  font-size: clamp(16px, 4.5vw, 26px);
+  border-radius: 0;
+  font-size: clamp(22px, 6vw, 32px);
   font-weight: 800;
   color: var(--accent);
   cursor: pointer;
   transition: all 0.12s;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
   position: relative;
   -webkit-tap-highlight-color: transparent;
 }
 
+.num-btn-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--mobile-numpad-row-height);
+  padding: var(--numpad-key-top-pad) 0 8px;
+}
+
+.num-btn-bottom-spacer {
+  display: none;
+  flex: 0 0 auto;
+  height: calc(var(--bottom-ui-pad) + 10px);
+}
+
+[data-numpad-layout="row"] .num-btn {
+  padding-bottom: 0;
+}
+
+[data-numpad-layout="row"] .numpad {
+  height: calc(var(--mobile-numpad-row-height) + var(--bottom-ui-pad) + 10px);
+}
+
+[data-numpad-layout="row"] .num-btn .num-btn-bottom-spacer {
+  display: block;
+}
+
 [data-numpad-layout="grid"] .numpad {
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 6px;
-  height: var(--mobile-input-panel-height);
+  grid-template-rows:
+    var(--mobile-numpad-row-height)
+    var(--mobile-numpad-row-height)
+    calc(var(--mobile-numpad-row-height) + var(--bottom-ui-pad) + 10px);
+  height: calc(var(--mobile-numpad-grid-height) + var(--bottom-ui-pad) + 10px);
   max-height: none;
 }
 
 [data-numpad-layout="grid"] .num-btn {
   min-height: 0;
+}
+
+[data-numpad-layout="grid"] .num-btn:nth-last-child(-n + 3) {
+  padding-bottom: 0;
+}
+
+[data-numpad-layout="grid"] .num-btn:nth-last-child(-n + 3) .num-btn-bottom-spacer {
+  display: block;
 }
 
 .num-btn:active {
@@ -1123,13 +1196,14 @@ body {
 
 .num-btn .num-count {
   position: absolute;
-  bottom: 2px;
-  right: 4px;
-  font-size: 9px;
-  font-weight: 700;
+  bottom: 6px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 800;
   opacity: 0.5;
   color: var(--text-2);
 }
+
 
 /* ============================================================
    Loading Overlay
@@ -1708,8 +1782,8 @@ body {
 
 @media (min-width: 600px) and (orientation: portrait) {
   .numpad {
-    padding: 10px 20px;
-    gap: 8px;
+    padding: 0;
+    gap: 0;
   }
 }
 
