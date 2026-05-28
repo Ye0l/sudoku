@@ -27,6 +27,8 @@ const state: AppState = {
 
 let selectedType: GameType = 'classic';
 let selectedDiff: Difficulty = 'easy';
+let selectedClassicDiff: Difficulty = 'easy';
+let selectedKillerDiff: Difficulty = 'easy';
 let pendingWorker: Worker | null = null;
 const cacheFillInProgress = new Set<string>();
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -43,6 +45,22 @@ let dragSum: {
   active: boolean;
 } | null = null;
 
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  easy: '쉬움',
+  medium: '보통',
+  hard: '어려움',
+  expert: '고수',
+  master: '최고난도',
+};
+
+function difficultyLabel(difficulty: Difficulty): string {
+  return DIFFICULTY_LABELS[difficulty] ?? DIFFICULTY_LABELS.easy;
+}
+
+function isKillerDifficulty(difficulty: Difficulty): boolean {
+  return difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard';
+}
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const screens = {
@@ -56,6 +74,7 @@ const el = {
   // Menu
   typeClassic:   document.getElementById('type-classic')!,
   typeKiller:    document.getElementById('type-killer')!,
+  difficultyGrid: document.querySelector<HTMLElement>('.difficulty-grid')!,
   diffBtns:      document.querySelectorAll<HTMLButtonElement>('.diff-btn'),
   startBtn:      document.getElementById('start-btn')!,
   resumeCard:    document.getElementById('resume-card')!,
@@ -274,7 +293,7 @@ function renderMenuResumeCard(): void {
   if (saved && !saved.completed) {
     el.resumeCard.classList.remove('hidden');
     const typeLabel = saved.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
-    const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[saved.difficulty];
+    const diffLabel = difficultyLabel(saved.difficulty);
     el.resumeCard.querySelector('.resume-info h4')!.textContent = `${typeLabel} · ${diffLabel}`;
     el.resumeCard.querySelector('.resume-info p')!.textContent = '진행 중인 게임을 이어서 하기';
     el.resumeCard.querySelector('.resume-time')!.textContent = formatTime(getElapsed(saved));
@@ -285,13 +304,26 @@ function renderMenuResumeCard(): void {
 
 function selectType(type: GameType): void {
   selectedType = type;
+  selectedDiff = type === 'classic' ? selectedClassicDiff : selectedKillerDiff;
   el.typeClassic.classList.toggle('active', type === 'classic');
   el.typeKiller.classList.toggle('active', type === 'killer');
+  el.difficultyGrid.classList.toggle('killer-difficulty', type === 'killer');
+  el.diffBtns.forEach(btn => {
+    const diff = btn.dataset.diff as Difficulty;
+    btn.classList.toggle('killer-hidden', type === 'killer' && !isKillerDifficulty(diff));
+    btn.classList.toggle('active', diff === selectedDiff);
+  });
   fillPuzzleCache(selectedType, selectedDiff);
 }
 
 function selectDiff(diff: Difficulty): void {
+  if (selectedType === 'killer' && !isKillerDifficulty(diff)) return;
   selectedDiff = diff;
+  if (selectedType === 'classic') {
+    selectedClassicDiff = diff;
+  } else {
+    selectedKillerDiff = diff;
+  }
   el.diffBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.diff === diff);
   });
@@ -400,7 +432,7 @@ async function startNewGame(): Promise<void> {
 
   // Set temporary header before puzzle is ready
   const typeLabel = selectedType === 'classic' ? '스도쿠' : '킬러 스도쿠';
-  const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[selectedDiff];
+  const diffLabel = difficultyLabel(selectedDiff);
   el.gameInfo.textContent = `${typeLabel} · ${diffLabel}`;
   el.timer.textContent = '00:00';
 
@@ -440,7 +472,7 @@ function resumeGame(): void {
 
 function updateGameHeader(game: GameState): void {
   const typeLabel = game.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
-  const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[game.difficulty];
+  const diffLabel = difficultyLabel(game.difficulty);
   el.gameInfo.textContent = `${typeLabel} · ${diffLabel}`;
 }
 
@@ -1489,7 +1521,7 @@ function showCompletion(game: GameState): void {
   saveGame(null); // clear saved game
 
   const typeLabel = game.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
-  const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[game.difficulty];
+  const diffLabel = difficultyLabel(game.difficulty);
   el.completeGameLabel.textContent = `${typeLabel} · ${diffLabel}`;
   el.completeTime.textContent = formatTime(game.elapsed);
   el.completeOverlay.classList.add('visible');
@@ -1710,7 +1742,7 @@ function renderHistory(): void {
 
   history.forEach(record => {
     const typeLabel = record.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
-    const diffLabel = { easy: '쉬움', medium: '보통', hard: '어려움' }[record.difficulty];
+    const diffLabel = difficultyLabel(record.difficulty);
     const icon = record.completed ? '✅' : '⏸';
     const hintText = record.completed ? ` · 힌트 ${record.hintCount ?? 0}` : '';
     const date = new Date(record.date);

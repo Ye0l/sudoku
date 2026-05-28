@@ -1,6 +1,6 @@
 // Killer Sudoku generation engine
 
-import { type Grid, type Difficulty, shuffle, solveRandom } from './sudoku.ts';
+import { type Grid, shuffle, solveRandom } from './sudoku.ts';
 
 export interface Cage {
   id: number;
@@ -25,6 +25,7 @@ export interface CageBorders {
 }
 
 type Technique = 'singlePossibility' | 'nakedSingle' | 'cageSumElimination' | 'inniesOuties' | 'nakedHiddenPairTriple';
+export type KillerDifficulty = 'easy' | 'medium' | 'hard';
 
 interface DifficultyReport {
   solved: boolean;
@@ -57,13 +58,13 @@ const TECHNIQUE_WEIGHT: Record<Technique, number> = {
   nakedHiddenPairTriple: 4,
 };
 
-const TARGETS: Record<Difficulty, { min: number; max: number; maxLevel: number }> = {
+const TARGETS: Record<KillerDifficulty, { min: number; max: number; maxLevel: number }> = {
   easy: { min: 0, max: 45, maxLevel: 2 },
   medium: { min: 31, max: 85, maxLevel: 2 },
   hard: { min: 71, max: 140, maxLevel: 3 },
 };
 
-const CAGE_SIZE_PROFILES: Record<Difficulty, CageSizeProfile> = {
+const CAGE_SIZE_PROFILES: Record<KillerDifficulty, CageSizeProfile> = {
   easy: {
     sizes: [
       { size: 1, weight: 8 },
@@ -508,7 +509,7 @@ function countKillerSolutions(cages: Cage[], limit = 2): number {
   return solutions;
 }
 
-function generateCages(solution: Grid, difficulty: Difficulty): Cage[] {
+function generateCages(solution: Grid, difficulty: KillerDifficulty): Cage[] {
   const profile = CAGE_SIZE_PROFILES[difficulty];
   const assigned = new Int32Array(81).fill(-1);
   const cages: Cage[] = [];
@@ -576,14 +577,14 @@ function mergeExtraSingles(cages: Cage[], solution: Grid, profile: CageSizeProfi
   return cages.filter((_, index) => !removed.has(index));
 }
 
-function difficultyDistance(report: DifficultyReport, difficulty: Difficulty): number {
+function difficultyDistance(report: DifficultyReport, difficulty: KillerDifficulty): number {
   const target = TARGETS[difficulty];
   const scoreDistance = report.score < target.min ? target.min - report.score : Math.max(0, report.score - target.max);
   const levelDistance = Math.max(0, report.maxLevel - target.maxLevel) * 50;
   return scoreDistance + levelDistance;
 }
 
-function isInTargetBand(report: DifficultyReport, difficulty: Difficulty): boolean {
+function isInTargetBand(report: DifficultyReport, difficulty: KillerDifficulty): boolean {
   const target = TARGETS[difficulty];
   return report.solved && report.maxLevel <= target.maxLevel && report.score >= target.min && report.score <= target.max;
 }
@@ -609,7 +610,7 @@ function assignCageColors(cages: Cage[]): void {
   });
 }
 
-export function generateKillerPuzzle(difficulty: Difficulty): KillerPuzzle {
+export function generateKillerPuzzle(difficulty: KillerDifficulty): KillerPuzzle {
   const solution: Grid = new Array(81).fill(0);
   solveRandom(solution);
 

@@ -1,11 +1,11 @@
 // Web Worker: puzzle generation (runs off main thread)
 
 import { generateClassicPuzzle, type Difficulty } from './sudoku.ts';
-import { generateKillerPuzzle } from './killer.ts';
+import { generateKillerPuzzle, type KillerDifficulty } from './killer.ts';
 
 type WorkerRequest =
   | { type: 'classic'; difficulty: Difficulty; id: string }
-  | { type: 'killer';  difficulty: Difficulty; id: string };
+  | { type: 'killer';  difficulty: KillerDifficulty; id: string };
 
 type WorkerResponse =
   | { type: 'classic'; puzzle: ReturnType<typeof generateClassicPuzzle>; id: string }
