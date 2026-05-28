@@ -616,6 +616,7 @@ body {
   border: 0;
   border-radius: 0;
   overflow: visible;
+  touch-action: none;
 }
 
 .board-canvas {

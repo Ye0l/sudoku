@@ -36,6 +36,12 @@ let calcAccumulator = 0;
 let calcPendingOp: '+' | '-' | '*' | '/' | null = null;
 let calcInputValue = '';
 let calcEnteringNumber = true;
+let dragSum: {
+  pointerId: number;
+  startCell: number;
+  currentCell: number;
+  active: boolean;
+} | null = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -548,9 +554,6 @@ function renderBoard(game: GameState): void {
     if (col === 2 || col === 5) cellEl.classList.add('box-border-right');
     if (row === 2 || row === 5) cellEl.classList.add('box-border-bottom');
 
-    // Touch/click
-    cellEl.addEventListener('pointerdown', () => onCellSelect(i), { passive: true });
-
     grid.appendChild(cellEl);
     el.cells.push(cellEl);
   }
@@ -945,6 +948,29 @@ function getInnerBoardPx(): number {
   return el.boardContainer.clientWidth - boardPad * 2;
 }
 
+function cellFromPointerEvent(e: PointerEvent): number {
+  const rect = el.boardGrid.getBoundingClientRect();
+  const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width - 0.01);
+  const y = Math.min(Math.max(e.clientY - rect.top, 0), rect.height - 0.01);
+  const col = Math.floor((x / rect.width) * 9);
+  const row = Math.floor((y / rect.height) * 9);
+  return row * 9 + col;
+}
+
+function dragBounds(): { minRow: number; maxRow: number; minCol: number; maxCol: number } | null {
+  if (!dragSum?.active) return null;
+  const startRow = (dragSum.startCell / 9) | 0;
+  const startCol = dragSum.startCell % 9;
+  const currentRow = (dragSum.currentCell / 9) | 0;
+  const currentCol = dragSum.currentCell % 9;
+  return {
+    minRow: Math.min(startRow, currentRow),
+    maxRow: Math.max(startRow, currentRow),
+    minCol: Math.min(startCol, currentCol),
+    maxCol: Math.max(startCol, currentCol),
+  };
+}
+
 function drawBoardCanvas(game: GameState): void {
   const canvas = el.boardCanvas;
   const canvasPx = el.boardContainer.clientWidth;
@@ -1104,6 +1130,96 @@ function drawKillerSumGuides(
     }
   }
   ctx.restore();
+
+  drawDragCageSumOverlay(game, ctx, cellStart, cellTrack, boardPx);
+}
+
+function drawDragCageSumOverlay(
+  game: GameState,
+  ctx: CanvasRenderingContext2D,
+  cellStart: (line: number) => number,
+  cellTrack: number,
+  boardPx: number,
+): void {
+  const bounds = dragBounds();
+  if (!bounds || !game.cages) return;
+
+  const isInside = (pos: number): boolean => {
+    const row = (pos / 9) | 0;
+    const col = pos % 9;
+    return row >= bounds.minRow && row <= bounds.maxRow && col >= bounds.minCol && col <= bounds.maxCol;
+  };
+  const included = game.cages.filter(cage => cage.cells.every(isInside));
+  const includedIds = new Set(included.map(cage => cage.id));
+  const sum = included.reduce((acc, cage) => acc + cage.sum, 0);
+  const bodyStyle = getComputedStyle(document.body);
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const accent = bodyStyle.getPropertyValue('--accent').trim() || '#6366f1';
+  const distinctHighlightFills = isDark
+    ? ['rgba(129,140,248,0.30)','rgba(244,114,182,0.30)','rgba(74,222,128,0.30)','rgba(251,191,36,0.30)','rgba(45,212,191,0.30)','rgba(192,132,252,0.30)']
+    : ['rgba(99,102,241,0.28)','rgba(236,72,153,0.28)','rgba(34,197,94,0.28)','rgba(245,158,11,0.28)','rgba(20,184,166,0.28)','rgba(168,85,247,0.28)'];
+  const distinctHighlightBorders = isDark
+    ? ['rgba(129,140,248,0.85)','rgba(244,114,182,0.85)','rgba(74,222,128,0.85)','rgba(251,191,36,0.85)','rgba(45,212,191,0.85)','rgba(192,132,252,0.85)']
+    : ['rgba(99,102,241,0.80)','rgba(236,72,153,0.80)','rgba(34,197,94,0.80)','rgba(217,119,6,0.82)','rgba(20,184,166,0.80)','rgba(168,85,247,0.80)'];
+  const accentHighlightFill = isDark ? 'rgba(129,140,248,0.30)' : 'rgba(99,102,241,0.28)';
+  const accentHighlightBorder = accent;
+  const x = cellStart(bounds.minCol);
+  const y = cellStart(bounds.minRow);
+  const w = cellTrack * (bounds.maxCol - bounds.minCol + 1);
+  const h = cellTrack * (bounds.maxRow - bounds.minRow + 1);
+
+  ctx.save();
+  ctx.fillStyle = isDark ? 'rgba(0,0,0,0.58)' : 'rgba(26,27,46,0.38)';
+  game.cages.forEach(cage => {
+    if (includedIds.has(cage.id)) return;
+    cage.cells.forEach(pos => {
+      const row = (pos / 9) | 0;
+      const col = pos % 9;
+      ctx.fillRect(cellStart(col), cellStart(row), cellTrack, cellTrack);
+    });
+  });
+
+  ctx.lineWidth = Math.max(1, cellTrack * 0.022);
+  included.forEach(cage => {
+    const useAccent = state.settings.cageColorMode === 'accent';
+    ctx.fillStyle = useAccent ? accentHighlightFill : distinctHighlightFills[cage.colorIndex];
+    ctx.strokeStyle = useAccent ? accentHighlightBorder : distinctHighlightBorders[cage.colorIndex];
+    cage.cells.forEach(pos => {
+      const row = (pos / 9) | 0;
+      const col = pos % 9;
+      const cellX = cellStart(col);
+      const cellY = cellStart(row);
+      ctx.fillRect(cellX, cellY, cellTrack, cellTrack);
+      ctx.strokeRect(cellX + 1, cellY + 1, cellTrack - 2, cellTrack - 2);
+    });
+  });
+
+  ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.42)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = Math.max(1.5, cellTrack * 0.026);
+  ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+
+  const label = String(sum);
+  const fontSize = Math.max(18, Math.round(cellTrack * 0.42));
+  ctx.font = `900 ${fontSize}px ${bodyStyle.fontFamily || 'system-ui, sans-serif'}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const labelWidth = Math.ceil(ctx.measureText(label).width) + 26;
+  const labelHeight = fontSize + 16;
+  const labelX = Math.min(boardPx - labelWidth / 2 - 4, Math.max(labelWidth / 2 + 4, x + w / 2));
+  const labelY = Math.min(boardPx - labelHeight / 2 - 4, y + h + labelHeight / 2 + 6);
+  ctx.fillStyle = isDark ? 'rgba(15,15,26,0.98)' : 'rgba(255,255,255,0.98)';
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(labelX - labelWidth / 2, labelY - labelHeight / 2, labelWidth, labelHeight, 10);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.fillText(label, labelX, labelY + 1);
+  ctx.restore();
 }
 
 function renderCell(game: GameState, idx: number): void {
@@ -1167,6 +1283,7 @@ function renderCell(game: GameState, idx: number): void {
 function onCellSelect(idx: number): void {
   const game = state.game;
   if (!game || game.completed) return;
+  dragSum = null;
 
   haptic('light');
 
@@ -1179,6 +1296,54 @@ function onCellSelect(idx: number): void {
 
   renderAllCells(game);
   updateKillerStats(game);
+}
+
+function onBoardPointerDown(e: PointerEvent): void {
+  const game = state.game;
+  if (!game || game.completed || state.screen !== 'game') return;
+  const cell = cellFromPointerEvent(e);
+  dragSum = { pointerId: e.pointerId, startCell: cell, currentCell: cell, active: false };
+  el.boardGrid.setPointerCapture(e.pointerId);
+}
+
+function onBoardPointerMove(e: PointerEvent): void {
+  const game = state.game;
+  if (!game || !dragSum || dragSum.pointerId !== e.pointerId || !game.cages) return;
+  const cell = cellFromPointerEvent(e);
+  const moved = cell !== dragSum.startCell;
+  if (!moved && !dragSum.active) return;
+  e.preventDefault();
+  dragSum = { ...dragSum, currentCell: cell, active: true };
+  drawBoardCanvas(game);
+}
+
+function onBoardPointerUp(e: PointerEvent): void {
+  const game = state.game;
+  if (!game || !dragSum || dragSum.pointerId !== e.pointerId) return;
+  const wasDrag = dragSum.active;
+  const cell = cellFromPointerEvent(e);
+  try {
+    el.boardGrid.releasePointerCapture(e.pointerId);
+  } catch {
+    // Pointer capture may already be released by the browser.
+  }
+
+  if (wasDrag && game.cages) {
+    dragSum = { ...dragSum, currentCell: cell, active: true, pointerId: -1 };
+    drawBoardCanvas(game);
+    haptic('light');
+    return;
+  }
+
+  dragSum = null;
+  onCellSelect(cell);
+}
+
+function onBoardPointerCancel(e: PointerEvent): void {
+  const game = state.game;
+  if (!dragSum || dragSum.pointerId !== e.pointerId) return;
+  dragSum = null;
+  if (game) drawBoardCanvas(game);
 }
 
 function onNumInput(num: number): void {
@@ -1668,6 +1833,11 @@ export function init(): void {
       if (n >= 1 && n <= 9) onNumInput(n);
     });
   });
+
+  el.boardGrid.addEventListener('pointerdown', onBoardPointerDown);
+  el.boardGrid.addEventListener('pointermove', onBoardPointerMove);
+  el.boardGrid.addEventListener('pointerup', onBoardPointerUp);
+  el.boardGrid.addEventListener('pointercancel', onBoardPointerCancel);
 
   // Controls
   el.btnUndo.addEventListener('click',  onUndo);
