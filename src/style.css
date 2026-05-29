@@ -1797,14 +1797,68 @@ body {
 
 @media (min-width: 900px) {
   .menu-scroll,
-  .settings-list,
-  .history-list {
+  .settings-list {
     max-width: 720px;
     margin: 0 auto;
   }
 
+  .history-list {
+    flex: 0 1 auto;
+    width: 100%;
+    max-width: 1040px;
+    max-height: calc(100dvh - 144px);
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 12px;
+  }
+
+  .history-item {
+    min-height: 92px;
+    padding: 20px 22px;
+    gap: 16px;
+  }
+
+  .history-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface2);
+    font-size: 24px;
+  }
+
+  .history-info h4 {
+    font-size: 17px;
+  }
+
+  .history-info p {
+    font-size: 14px;
+    margin-top: 4px;
+  }
+
+  .history-time {
+    font-size: 18px;
+  }
+
+  .history-date {
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .history-empty {
+    grid-column: 1 / -1;
+    min-height: 420px;
+    font-size: 16px;
+  }
+
   .clear-history-btn {
-    width: min(720px, calc(100% - 24px));
+    width: min(1040px, calc(100% - 48px));
+    margin-bottom: 24px;
     margin-left: auto;
     margin-right: auto;
   }
