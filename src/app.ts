@@ -109,6 +109,7 @@ const el = {
 
   // Controls
   btnUndo:       document.getElementById('btn-undo')!,
+  btnRedo:       document.getElementById('btn-redo')!,
   btnErase:      document.getElementById('btn-erase')!,
   btnMemo:       document.getElementById('btn-memo')!,
   btnHint:       document.getElementById('btn-hint')!,
@@ -139,7 +140,15 @@ const el = {
   themeBtns:       document.querySelectorAll<HTMLButtonElement>('.theme-btn'),
 };
 
-const undoStack: { cells: CellState[] }[] = [];
+interface GameSnapshot {
+  cells: CellState[];
+  hintCount: number;
+  memoMode: boolean;
+  completed: boolean;
+}
+
+const undoStack: GameSnapshot[] = [];
+const redoStack: GameSnapshot[] = [];
 let settingsReturnScreen: Exclude<Screen, 'settings'> = 'menu';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -429,6 +438,7 @@ async function startNewGame(): Promise<void> {
   }
 
   undoStack.length = 0;
+  redoStack.length = 0;
 
   // Set temporary header before puzzle is ready
   const typeLabel = selectedType === 'classic' ? '스도쿠' : '킬러 스도쿠';
@@ -462,6 +472,7 @@ function resumeGame(): void {
   if (!saved || saved.completed) return;
   state.game = saved;
   undoStack.length = 0;
+  redoStack.length = 0;
   updateGameHeader(saved);
   navigate('game');
   requestAnimationFrame(() => {
@@ -1378,6 +1389,51 @@ function onBoardPointerCancel(e: PointerEvent): void {
   if (game) drawBoardCanvas(game);
 }
 
+function snapshotGame(game: GameState): GameSnapshot {
+  return {
+    cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })),
+    hintCount: game.hintCount ?? 0,
+    memoMode: game.memoMode,
+    completed: game.completed,
+  };
+}
+
+function pushUndo(game: GameState): void {
+  undoStack.push(snapshotGame(game));
+  if (undoStack.length > 50) undoStack.shift();
+  redoStack.length = 0;
+}
+
+function pushRedo(game: GameState): void {
+  redoStack.push(snapshotGame(game));
+  if (redoStack.length > 50) redoStack.shift();
+}
+
+function restoreSnapshot(game: GameState, snapshot: GameSnapshot): GameState {
+  return {
+    ...game,
+    cells: snapshot.cells.map(c => ({ ...c, memos: [...c.memos] })),
+    hintCount: snapshot.hintCount,
+    memoMode: snapshot.memoMode,
+    completed: snapshot.completed,
+  };
+}
+
+function renderRestoredGame(game: GameState): void {
+  renderAllCells(game);
+  updateNumpadCounts(game);
+  updateMemoBtn(game);
+  updateHintCount(game);
+  updateKillerStats(game);
+
+  if (game.completed) {
+    showCompletion(game);
+  } else {
+    el.completeOverlay.classList.remove('visible');
+    scheduleSave(game);
+  }
+}
+
 function onNumInput(num: number): void {
   const game = state.game;
   if (!game || game.completed || game.selectedCell === -1) return;
@@ -1389,9 +1445,7 @@ function onNumInput(num: number): void {
 
   haptic('medium');
 
-  // Push undo state
-  undoStack.push({ cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })) });
-  if (undoStack.length > 50) undoStack.shift();
+  pushUndo(game);
 
   const newGame = setCellValue(game, game.selectedCell, num, true);
   state.game = newGame;
@@ -1423,7 +1477,7 @@ function onErase(): void {
   if (cell.given || (cell.value === 0 && cell.memos.length === 0)) return;
 
   haptic('light');
-  undoStack.push({ cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })) });
+  pushUndo(game);
 
   const newGame = eraseCellValue(game, game.selectedCell);
   state.game = newGame;
@@ -1435,17 +1489,27 @@ function onErase(): void {
 
 function onUndo(): void {
   if (undoStack.length === 0) return;
-  const prev = undoStack.pop()!;
   const game = state.game;
   if (!game) return;
+  const prev = undoStack.pop()!;
 
   haptic('light');
-  state.game = { ...game, cells: prev.cells };
-  renderAllCells(state.game);
-  updateNumpadCounts(state.game);
-  updateHintCount(state.game);
-  updateKillerStats(state.game);
-  scheduleSave(state.game);
+  pushRedo(game);
+  state.game = restoreSnapshot(game, prev);
+  renderRestoredGame(state.game);
+}
+
+function onRedo(): void {
+  if (redoStack.length === 0) return;
+  const game = state.game;
+  if (!game) return;
+  const next = redoStack.pop()!;
+
+  haptic('light');
+  undoStack.push(snapshotGame(game));
+  if (undoStack.length > 50) undoStack.shift();
+  state.game = restoreSnapshot(game, next);
+  renderRestoredGame(state.game);
 }
 
 function onHint(): void {
@@ -1455,7 +1519,7 @@ function onHint(): void {
   if (cell.given || cell.value === game.solution[game.selectedCell]) return;
 
   haptic('medium');
-  undoStack.push({ cells: game.cells.map(c => ({ ...c, memos: [...c.memos] })) });
+  pushUndo(game);
 
   const correct = game.solution[game.selectedCell];
   // Turn off memo mode temporarily for hint
@@ -1514,6 +1578,25 @@ function updateHintButtonVisibility(): void {
 function updateKillerStats(game: GameState): void {
   if (game.cages) setupCageCanvas(game, getInnerBoardPx());
   drawBoardCanvas(game);
+}
+
+function bindPressButton(button: HTMLElement, handler: () => void): void {
+  let lastPointerAt = 0;
+
+  button.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    lastPointerAt = performance.now();
+    handler();
+  });
+
+  button.addEventListener('click', (e) => {
+    if (performance.now() - lastPointerAt < 500) {
+      e.preventDefault();
+      return;
+    }
+    handler();
+  });
 }
 
 function showCompletion(game: GameState): void {
@@ -1667,14 +1750,14 @@ function updateCalculatorVisibility(): void {
     el.calcPad.classList.remove('collapsed');
   }
 
-  if (state.screen === 'game' && state.game) {
-    requestAnimationFrame(() => renderBoard(state.game!));
-  }
 }
 
 function toggleCalculator(): void {
   calcExpanded = !calcExpanded;
   updateCalculatorVisibility();
+  if (state.screen === 'game' && state.game) {
+    requestAnimationFrame(() => renderBoard(state.game!));
+  }
 }
 
 function setupFloatCalcDrag(): void {
@@ -1872,14 +1955,15 @@ export function init(): void {
   el.boardGrid.addEventListener('pointercancel', onBoardPointerCancel);
 
   // Controls
-  el.btnUndo.addEventListener('click',  onUndo);
-  el.btnErase.addEventListener('click', onErase);
-  el.btnMemo.addEventListener('click',  onToggleMemo);
-  el.btnHint.addEventListener('click',  onHint);
-  el.btnCalc.addEventListener('click', toggleCalculator);
+  bindPressButton(el.btnUndo, onUndo);
+  bindPressButton(el.btnRedo, onRedo);
+  bindPressButton(el.btnErase, onErase);
+  bindPressButton(el.btnMemo, onToggleMemo);
+  bindPressButton(el.btnHint, onHint);
+  bindPressButton(el.btnCalc, toggleCalculator);
   el.calcInput.addEventListener('keydown', onCalculatorKeydown);
   document.querySelectorAll<HTMLButtonElement>('[data-calc]').forEach(btn => {
-    btn.addEventListener('click', () => onCalcButton(btn.dataset.calc ?? ''));
+    bindPressButton(btn, () => onCalcButton(btn.dataset.calc ?? ''));
   });
   setupFloatCalcDrag();
 
@@ -1890,8 +1974,11 @@ export function init(): void {
     const key = e.key;
     if (key >= '1' && key <= '9') { onNumInput(parseInt(key)); return; }
     if (key === 'Backspace' || key === 'Delete' || key === '0' || key === 'e' || key === 'E') { onErase(); return; }
+    if ((key === 'z' || key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) { onRedo(); return; }
+    if ((key === 'y' || key === 'Y') && (e.ctrlKey || e.metaKey)) { onRedo(); return; }
     if (key === 'z' && (e.ctrlKey || e.metaKey)) { onUndo(); return; }
     if ((key === 'u' || key === 'U') && !e.ctrlKey && !e.metaKey) { onUndo(); return; }
+    if ((key === 'r' || key === 'R') && !e.ctrlKey && !e.metaKey) { onRedo(); return; }
     if (key === 'm' || key === 'M') { onToggleMemo(); return; }
     if (key === 'h' || key === 'H') { onHint(); return; }
     if (key === 'c' || key === 'C') { toggleCalculator(); return; }
