@@ -113,60 +113,6 @@ export function loadOrCreateUserId(): string {
   return id;
 }
 
-// ── Cloud sync ────────────────────────────────────────────────────────────────
-
-const SYNC_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_SYNC_URL ?? '';
-
-export interface SyncPayload {
-  savedGames: GameState[];
-  history: HistoryRecord[];
-  settings: AppSettings;
-  syncedAt: number;
-}
-
-export async function pushSync(userId: string): Promise<void> {
-  if (!SYNC_URL) throw new Error('VITE_SYNC_URL not configured');
-  const payload: SyncPayload = {
-    savedGames: loadSavedGames(),
-    history: loadHistory(),
-    settings: loadSettings(),
-    syncedAt: Date.now(),
-  };
-  const res = await fetch(`${SYNC_URL}/sync/${userId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Sync failed: ${res.status}`);
-}
-
-export async function pullSync(userId: string): Promise<SyncPayload | null> {
-  if (!SYNC_URL) throw new Error('VITE_SYNC_URL not configured');
-  const res = await fetch(`${SYNC_URL}/sync/${userId}`);
-  if (!res.ok) throw new Error(`Sync failed: ${res.status}`);
-  return res.json() as Promise<SyncPayload | null>;
-}
-
-export function mergeAndApplySync(remote: SyncPayload): void {
-  // History: union by id, newest first, cap at 100
-  const localHistory = loadHistory();
-  const historyMap = new Map<string, HistoryRecord>();
-  for (const r of [...remote.history, ...localHistory]) historyMap.set(r.id, r);
-  const mergedHistory = [...historyMap.values()]
-    .sort((a, b) => b.date - a.date)
-    .slice(0, 100);
-  save(KEYS.HISTORY, mergedHistory);
-
-  // Saved games: union by id, cap at MAX_SAVED_GAMES
-  const localGames = loadSavedGames();
-  const gamesMap = new Map<string, GameState>();
-  for (const g of [...localGames, ...remote.savedGames]) gamesMap.set(g.id, g);
-  const mergedGames = [...gamesMap.values()].slice(0, MAX_SAVED_GAMES);
-  save(KEYS.SAVED_GAMES, mergedGames);
-
-  // Settings: use remote (user explicitly synced)
-  save(KEYS.SETTINGS, remote.settings);
-}
 
 function puzzleCacheKey(type: GameType, difficulty: Difficulty): string {
   return `${type}:${difficulty}`;

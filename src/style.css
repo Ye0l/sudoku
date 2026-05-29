@@ -1751,9 +1751,6 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
-  margin-left: 40px;
-  margin-top: 6px;
   padding: 10px 14px;
   border: 1.5px solid var(--accent);
   border-radius: 10px;
@@ -1780,6 +1777,61 @@ body {
 
 .user-id-copy-icon {
   flex-shrink: 0;
+}
+
+.user-id-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-left: 40px;
+  margin-top: 6px;
+  align-items: stretch;
+}
+
+.user-id-copy-btn {
+  flex: 1;
+}
+
+.user-id-edit-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.user-id-edit-btn:active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.id-edit-input {
+  width: 100%;
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--surface-2, #eee);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.id-edit-input:focus {
+  border-color: var(--accent);
+}
+
+.id-edit-input.invalid {
+  border-color: #e53e3e;
 }
 
 .sync-btn {

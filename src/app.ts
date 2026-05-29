@@ -4,8 +4,14 @@ import type { AccentTheme, AppState, CageColorMode, GameState, GameType, Difficu
 import {
   loadSavedGames, saveGame, removeSavedGame, loadHistory, loadSettings, saveSettings,
   clearHistory, removeHistoryRecord, takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, upsertHistory,
-  loadOrCreateUserId, pushSync, pullSync, mergeAndApplySync,
+  loadOrCreateUserId,
 } from './storage.ts';
+import {
+  syncAll, syncOnClear, acquireSession, forceAcquireSession, releaseSession,
+  markSettingsChanged, markPuzzleChanged, markPuzzleDeleted, clearSyncMeta,
+  startAutoSync, setupPageLifecycle, lastSyncAt, hasSyncUrl,
+  SessionConflictError,
+} from './sync.ts';
 import {
   createGame, setCellValue, eraseCellValue, autoSave,
   startTimer, stopTimer, formatTime, getElapsed,
@@ -25,6 +31,8 @@ const state: AppState = {
   history: loadHistory(),
   settings: loadSettings(),
 };
+
+let userId = '';  // initialized in init()
 
 let selectedType: GameType = 'classic';
 let selectedDiff: Difficulty = 'easy';
@@ -128,6 +136,11 @@ const el = {
   historyList:   document.getElementById('history-list')!,
   userIdDisplay:  document.getElementById('user-id-display')!,
   copyUserIdBtn:  document.getElementById('copy-user-id')!,
+  editUserIdBtn:  document.getElementById('edit-user-id')!,
+  idEditBackdrop: document.getElementById('id-edit-backdrop')!,
+  idEditInput:    document.getElementById('id-edit-input') as HTMLInputElement,
+  idEditOk:       document.getElementById('id-edit-ok') as HTMLButtonElement,
+  idEditCancel:   document.getElementById('id-edit-cancel')!,
   syncBtn:        document.getElementById('sync-btn') as HTMLButtonElement,
   syncStatusText: document.getElementById('sync-status-text')!,
   toast:          document.getElementById('toast')!,
@@ -353,6 +366,7 @@ function renderMenuSavedGames(): void {
       if (!ok) return;
       animateRemove(card, () => {
         removeSavedGame(game.id);
+        markPuzzleDeleted(game.id);
         card.remove();
         if (el.resumeList.children.length === 0) {
           el.resumeSection.classList.add('hidden');
@@ -1653,6 +1667,8 @@ function bindPressButton(button: HTMLElement, handler: () => void): void {
 function showCompletion(game: GameState): void {
   stopTimer();
   removeSavedGame(game.id);
+  markPuzzleDeleted(game.id);
+  void syncOnClear(userId, game.id);
 
   const typeLabel = game.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
   const diffLabel = difficultyLabel(game.difficulty);
@@ -1664,7 +1680,10 @@ function showCompletion(game: GameState): void {
 
 function scheduleSave(game: GameState): void {
   if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => autoSave(game), 800);
+  saveTimeout = setTimeout(() => {
+    autoSave(game);
+    markPuzzleChanged(game.id);
+  }, 800);
 }
 
 function onCalcButton(action: string): void {
@@ -1954,6 +1973,7 @@ function syncSettingsUI(): void {
 
 function saveSettingsState(): void {
   saveSettings(state.settings);
+  markSettingsChanged();
 }
 
 // ── Resize handler ────────────────────────────────────────────────────────────
@@ -1987,8 +2007,10 @@ function onResize(): void {
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 export function init(): void {
-  const userId = loadOrCreateUserId();
+  const USER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  userId = loadOrCreateUserId();
   el.userIdDisplay.textContent = userId;
+
   el.copyUserIdBtn.addEventListener('click', () => {
     navigator.clipboard.writeText(userId).then(() => {
       el.copyUserIdBtn.classList.add('copied');
@@ -1997,39 +2019,106 @@ export function init(): void {
     });
   });
 
-  const syncedAtKey = 'sudoku_last_synced_at';
+  el.editUserIdBtn.addEventListener('click', () => {
+    el.idEditInput.value = userId;
+    el.idEditInput.classList.remove('invalid');
+    el.idEditBackdrop.classList.add('visible');
+    setTimeout(() => el.idEditInput.select(), 50);
+  });
+
+  function closeIdEdit(): void {
+    el.idEditBackdrop.classList.remove('visible');
+  }
+
+  el.idEditCancel.addEventListener('click', closeIdEdit);
+  el.idEditBackdrop.addEventListener('click', (e) => {
+    if (e.target === el.idEditBackdrop) closeIdEdit();
+  });
+
+  el.idEditInput.addEventListener('input', () => {
+    el.idEditInput.classList.remove('invalid');
+  });
+
+  el.idEditOk.addEventListener('click', () => {
+    const val = el.idEditInput.value.trim();
+    if (!USER_ID_RE.test(val)) {
+      el.idEditInput.classList.add('invalid');
+      el.idEditInput.focus();
+      return;
+    }
+    localStorage.setItem('sudoku_user_id', val);
+    userId = val;
+    clearSyncMeta();
+    el.userIdDisplay.textContent = userId;
+    updateSyncStatus();
+    closeIdEdit();
+    showToast('동기화 ID가 변경됐어요');
+  });
+
   function updateSyncStatus(): void {
-    const ts = localStorage.getItem(syncedAtKey);
+    const ts = lastSyncAt();
     el.syncStatusText.textContent = ts
-      ? `마지막 동기화: ${new Date(Number(ts)).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      ? `마지막 동기화: ${new Date(ts).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
       : '마지막 동기화: 없음';
   }
   updateSyncStatus();
 
+  function applySyncedState(): void {
+    state.history = loadHistory();
+    state.settings = loadSettings();
+    applyTheme(state.settings.theme);
+    applyAccentTheme(state.settings.accentTheme);
+    applyNumpadLayout(state.settings.numpadLayout);
+    applyGridLineSettings();
+    syncSettingsUI();
+    updateSyncStatus();
+  }
+
   el.syncBtn.addEventListener('click', async () => {
+    if (!hasSyncUrl()) { showToast('VITE_SYNC_URL이 설정되지 않았어요'); return; }
     el.syncBtn.disabled = true;
     el.syncBtn.classList.add('syncing');
+
+    async function runSync(): Promise<void> {
+      const result = await syncAll(userId);
+      await releaseSession(userId);
+      applySyncedState();
+      if (result.overwritten.length > 0) {
+        showToast(`동기화 완료 (${result.overwritten.length}개 원격으로 업데이트됨)`);
+      } else {
+        showToast('동기화 완료');
+      }
+    }
+
     try {
-      const remote = await pullSync(userId);
-      if (remote) mergeAndApplySync(remote);
-      await pushSync(userId);
-      localStorage.setItem(syncedAtKey, String(Date.now()));
-      updateSyncStatus();
-      state.history = loadHistory();
-      state.settings = loadSettings();
-      applyTheme(state.settings.theme);
-      applyAccentTheme(state.settings.accentTheme);
-      applyNumpadLayout(state.settings.numpadLayout);
-      applyGridLineSettings();
-      syncSettingsUI();
-      showToast('동기화 완료');
+      try {
+        await acquireSession(userId);
+      } catch (e) {
+        if (!(e instanceof SessionConflictError)) throw e;
+        const ok = await showConfirm('동기화 충돌', '다른 기기에서 동기화 중입니다. 강제로 이어받을까요?');
+        if (!ok) return;
+        await forceAcquireSession(userId);
+      }
+      await runSync();
     } catch {
+      await releaseSession(userId);
       showToast('동기화 실패. 네트워크를 확인해주세요');
     } finally {
       el.syncBtn.disabled = false;
       el.syncBtn.classList.remove('syncing');
     }
   });
+
+  // Auto-sync every 3 minutes
+  startAutoSync(
+    userId,
+    (result) => {
+      applySyncedState();
+      if (result.overwritten.length > 0) showToast(`${result.overwritten.length}개 원격으로 업데이트됨`);
+    },
+    () => { /* silently ignore auto-sync errors */ },
+  );
+  setupPageLifecycle(userId);
 
   syncViewportHeight();
 

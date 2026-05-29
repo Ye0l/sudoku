@@ -1,0 +1,118 @@
+## 동기화 시스템 구현 지침
+
+### 개요
+
+Cloudflare KV 기반 멀티 디바이스 동기화. 단일 활성 세션을 강제하며, 데이터 종류별 머지 전략을 적용한다.
+
+---
+
+### KV 키 구조
+
+```
+session:{uid}                  → 활성 세션 락
+user:{uid}:settings            → 설정
+user:{uid}:puzzle:{puzzleId}   → 퍼즐별 진행도
+user:{uid}:clears              → 클리어 로그
+```
+
+---
+
+### 데이터 구조
+
+모든 동기화 대상 데이터는 서버 타임스탬프를 포함한다.
+
+```ts
+type Settings = {
+  theme: string
+  // 기타 설정값
+  updatedAt: number   // 서버 시간 기준
+}
+
+type PuzzleProgress = {
+  puzzleId: string
+  cells: CellState[][]
+  globalSeq: number
+  updatedAt: number   // 서버 시간 기준
+  deletedAt?: number  // Tombstone: 삭제 시 기록, 실제 KV 삭제 안 함
+}
+
+type ClearLog = {
+  id: string          // puzzleId + clearedAt 조합
+  puzzleId: string
+  clearedAt: number
+  elapsedMs: number
+}
+
+type Clears = {
+  logs: ClearLog[]
+  updatedAt: number
+}
+```
+
+---
+
+### 머지 전략
+
+**설정, 퍼즐 진행도** — Last-Write-Wins (서버 타임스탬프 비교)
+- 원격 `updatedAt` > 로컬 `updatedAt` 이면 원격으로 덮어씀
+- 로컬이 더 최신이면 원격에 push
+- 같으면 아무것도 안 함
+
+**클리어 로그** — Union 머지
+- 로컬 + 원격 합집합, `id` 기준 중복 제거
+- append-only, 삭제 없음
+
+**삭제 처리** — Tombstone
+- 퍼즐 삭제 시 KV에서 지우지 않고 `deletedAt` 기록
+- 머지 시 `deletedAt`이 있으면 삭제된 것으로 처리
+- 덮어씌워짐이 발생한 경우 UI에 알림 표기
+
+---
+
+### 신규 기기 폴백
+
+로컬에 데이터가 없을 경우 타임스탬프 비교 없이 원격 전체를 풀 다운로드한다. 머지 로직에 태우지 않는다.
+
+---
+
+### 세션 락
+
+- 세션 획득 성공 시에만 쓰기 가능
+- 세션 TTL: 60초, Heartbeat 주기: 30초
+- 다른 기기 활성 세션 존재 시: 대기 또는 강제 이어받기 선택 UI 표시
+- `visibilitychange`, `pagehide`에서 세션 해제 시도 (best-effort, 실패해도 TTL로 자연 만료)
+
+---
+
+### 동기화 타이밍
+
+| 트리거 | 대상 |
+|--------|------|
+| 3~5분 주기 (setInterval) | 전체 |
+| 퍼즐 클리어 시 즉시 | clears + 해당 puzzle progress |
+| 수동 (UI 버튼) | 전체 |
+
+---
+
+### 동기화 흐름
+
+```
+syncAll()
+  │
+  ├─ 로컬 데이터 없음? → 풀 다운로드 후 종료
+  │
+  ├─ settings       → LWW 머지 → 최신 쪽을 로컬/원격 모두 업데이트
+  ├─ puzzle:{id} * N → LWW 머지 → 덮어씌워짐 발생 시 알림 큐에 추가
+  └─ clears         → Union 머지
+  │
+  └─ 알림 큐 있으면 UI에 표기
+```
+
+---
+
+### 실패 처리
+
+- KV는 atomic batch write 미지원으로 키별 순차 put
+- 중간 실패 시 전체 롤백 불가 — sync를 재시도 단위로 설계
+- 실패 시 로컬 상태는 유지, 다음 sync 타이밍에 재시도
+- 사용자에게 "동기화 실패" 표기
