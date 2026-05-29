@@ -4,6 +4,7 @@ import type { AccentTheme, AppState, CageColorMode, GameState, GameType, Difficu
 import {
   loadSavedGames, saveGame, removeSavedGame, loadHistory, loadSettings, saveSettings,
   clearHistory, removeHistoryRecord, takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, upsertHistory,
+  loadOrCreateUserId,
 } from './storage.ts';
 import {
   createGame, setCellValue, eraseCellValue, autoSave,
@@ -125,7 +126,9 @@ const el = {
 
   // History
   historyList:   document.getElementById('history-list')!,
-  appVersion:    document.getElementById('app-version')!,
+  userIdDisplay: document.getElementById('user-id-display')!,
+  copyUserIdBtn: document.getElementById('copy-user-id')!,
+  toast:         document.getElementById('toast')!,
 
   // Settings
   toggleErrors:    document.getElementById('toggle-errors') as HTMLInputElement,
@@ -1955,6 +1958,15 @@ function saveSettingsState(): void {
 
 let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(msg: string): void {
+  if (toastTimer) clearTimeout(toastTimer);
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  toastTimer = setTimeout(() => el.toast.classList.remove('show'), 2000);
+}
+
 function syncViewportHeight(): void {
   const height = window.visualViewport?.height ?? window.innerHeight;
   document.documentElement.style.setProperty('--app-height', `${height}px`);
@@ -1973,7 +1985,15 @@ function onResize(): void {
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 export function init(): void {
-  el.appVersion.textContent = `Sudoku PWA ${__APP_VERSION__}`;
+  const userId = loadOrCreateUserId();
+  el.userIdDisplay.textContent = userId;
+  el.copyUserIdBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(userId).then(() => {
+      el.copyUserIdBtn.classList.add('copied');
+      setTimeout(() => el.copyUserIdBtn.classList.remove('copied'), 1500);
+      showToast('ID가 클립보드에 복사됐어요');
+    });
+  });
   syncViewportHeight();
 
   // Apply theme

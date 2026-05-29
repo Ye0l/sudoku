@@ -1747,6 +1747,67 @@ body {
 
 .theme-btn:active { transform: scale(0.88); }
 
+.user-id-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-left: 40px;
+  margin-top: 6px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+}
+
+.user-id-copy-btn:active,
+.user-id-copy-btn.copied {
+  background: var(--accent);
+  color: #fff;
+}
+
+.user-id-text {
+  font-family: monospace;
+  font-size: 11px;
+  word-break: break-all;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.user-id-copy-icon {
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Toast
+   ============================================================ */
+.toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--text-1);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+  z-index: 9999;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ============================================================
    Difficulty badge
    ============================================================ */

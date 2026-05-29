@@ -2,6 +2,7 @@
 
 import type { AccentTheme, GameState, HistoryRecord, AppSettings, CachedPuzzle, GameType, Difficulty } from './types.ts';
 import { DEFAULT_SETTINGS } from './types.ts';
+import { createId } from './id.ts';
 
 const KEYS = {
   GAME: 'sudoku_game',               // legacy single-game key, migration only
@@ -9,6 +10,7 @@ const KEYS = {
   HISTORY: 'sudoku_history',
   SETTINGS: 'sudoku_settings',
   PUZZLE_CACHE: 'sudoku_puzzle_cache_v1',
+  USER_ID: 'sudoku_user_id',
 } as const;
 
 const MAX_SAVED_GAMES = 10;
@@ -101,6 +103,14 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   save(KEYS.SETTINGS, settings);
+}
+
+export function loadOrCreateUserId(): string {
+  const existing = localStorage.getItem(KEYS.USER_ID);
+  if (existing) return existing;
+  const id = createId();
+  localStorage.setItem(KEYS.USER_ID, id);
+  return id;
 }
 
 function puzzleCacheKey(type: GameType, difficulty: Difficulty): string {

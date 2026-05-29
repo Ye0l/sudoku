@@ -453,15 +453,25 @@
 
         <!-- About -->
         <div class="section-label" style="margin-top:12px;">정보</div>
-        <div class="settings-item">
-          <div class="settings-icon">ℹ️</div>
+        <div class="settings-item settings-item-stacked">
+          <div class="settings-icon">🔑</div>
           <div class="settings-label">
-            <h4>버전</h4>
-            <p id="app-version">Sudoku PWA</p>
+            <h4>동기화 ID</h4>
+            <p>기기 간 동기화에 사용되는 고유 ID</p>
           </div>
+          <button id="copy-user-id" class="user-id-copy-btn" title="복사">
+            <span id="user-id-display" class="user-id-text">—</span>
+            <svg class="user-id-copy-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="toast" aria-live="polite"></div>
 
     <!-- Confirm bottom sheet (reusable) -->
     <div id="confirm-backdrop" class="confirm-backdrop">
