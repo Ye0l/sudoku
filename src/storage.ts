@@ -4,12 +4,14 @@ import type { AccentTheme, GameState, HistoryRecord, AppSettings, CachedPuzzle, 
 import { DEFAULT_SETTINGS } from './types.ts';
 
 const KEYS = {
-  GAME: 'sudoku_game',
+  GAME: 'sudoku_game',               // legacy single-game key, migration only
+  SAVED_GAMES: 'sudoku_saved_games',
   HISTORY: 'sudoku_history',
   SETTINGS: 'sudoku_settings',
   PUZZLE_CACHE: 'sudoku_puzzle_cache_v1',
 } as const;
 
+const MAX_SAVED_GAMES = 10;
 const MAX_CACHED_PUZZLES_PER_KEY = 3;
 
 function load<T>(key: string, fallback: T): T {
@@ -29,16 +31,32 @@ function save(key: string, value: unknown): void {
   }
 }
 
-export function loadGame(): GameState | null {
-  return load<GameState | null>(KEYS.GAME, null);
+export function loadSavedGames(): GameState[] {
+  const games = load<GameState[] | null>(KEYS.SAVED_GAMES, null);
+  if (games !== null) return games;
+
+  // Migrate from legacy single-game key
+  const legacy = load<GameState | null>(KEYS.GAME, null);
+  const migrated: GameState[] = (legacy && !legacy.completed) ? [legacy] : [];
+  save(KEYS.SAVED_GAMES, migrated);
+  return migrated;
 }
 
-export function saveGame(game: GameState | null): void {
-  if (game) {
-    save(KEYS.GAME, game);
+export function saveGame(game: GameState): void {
+  const games = loadSavedGames();
+  const idx = games.findIndex(g => g.id === game.id);
+  if (idx >= 0) {
+    games[idx] = game;
   } else {
-    localStorage.removeItem(KEYS.GAME);
+    games.unshift(game);
+    if (games.length > MAX_SAVED_GAMES) games.length = MAX_SAVED_GAMES;
   }
+  save(KEYS.SAVED_GAMES, games);
+}
+
+export function removeSavedGame(id: string): void {
+  const games = loadSavedGames().filter(g => g.id !== id);
+  save(KEYS.SAVED_GAMES, games);
 }
 
 export function loadHistory(): HistoryRecord[] {
@@ -48,8 +66,20 @@ export function loadHistory(): HistoryRecord[] {
 export function addHistory(record: HistoryRecord): void {
   const history = loadHistory();
   history.unshift(record);
-  // Keep last 100 records
   if (history.length > 100) history.length = 100;
+  save(KEYS.HISTORY, history);
+}
+
+// Upsert: removes existing record with same id before inserting, prevents duplicates
+export function upsertHistory(record: HistoryRecord): void {
+  const history = loadHistory().filter(h => h.id !== record.id);
+  history.unshift(record);
+  if (history.length > 100) history.length = 100;
+  save(KEYS.HISTORY, history);
+}
+
+export function removeHistoryRecord(id: string): void {
+  const history = loadHistory().filter(h => h.id !== id);
   save(KEYS.HISTORY, history);
 }
 

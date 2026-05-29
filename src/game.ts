@@ -195,6 +195,7 @@ export function getHighlightState(
 }
 
 export function autoSave(game: GameState): void {
-  const toSave = { ...game, elapsed: getElapsed(game) };
+  const now = Date.now();
+  const toSave = { ...game, elapsed: getElapsed(game), startTime: now };
   saveGame(toSave);
 }

@@ -2,8 +2,8 @@
 
 import type { AccentTheme, AppState, CageColorMode, GameState, GameType, Difficulty, Screen, Theme, NumpadLayout, CellState, CachedPuzzle, HistoryRecord } from './types.ts';
 import {
-  loadGame, saveGame, loadHistory, loadSettings, saveSettings, clearHistory,
-  takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, addHistory,
+  loadSavedGames, saveGame, removeSavedGame, loadHistory, loadSettings, saveSettings,
+  clearHistory, removeHistoryRecord, takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, upsertHistory,
 } from './storage.ts';
 import {
   createGame, setCellValue, eraseCellValue, autoSave,
@@ -76,8 +76,9 @@ const el = {
   typeKiller:    document.getElementById('type-killer')!,
   difficultyGrid: document.querySelector<HTMLElement>('.difficulty-grid')!,
   diffBtns:      document.querySelectorAll<HTMLButtonElement>('.diff-btn'),
-  startBtn:      document.getElementById('start-btn')!,
-  resumeCard:    document.getElementById('resume-card')!,
+  startBtn:        document.getElementById('start-btn')!,
+  resumeSection:   document.getElementById('resume-section')!,
+  resumeList:      document.getElementById('resume-list')!,
 
   // Game
   timer:         document.getElementById('timer')!,
@@ -194,7 +195,7 @@ function navigate(to: Screen, direction: 'forward' | 'back' | 'fade' = 'forward'
 
 function onScreenEnter(screen: Screen): void {
   if (screen === 'menu') {
-    renderMenuResumeCard();
+    renderMenuSavedGames();
   } else if (screen === 'game' && state.game) {
     renderBoard(state.game);
   } else if (screen === 'history') {
@@ -249,7 +250,7 @@ function recordAbandonedGame(game: GameState): void {
     moves: 0,
     hintCount: game.hintCount ?? 0,
   };
-  addHistory(record);
+  upsertHistory(record);
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -297,18 +298,65 @@ function refreshMainFeatures(): void {
 
 // ── Menu ──────────────────────────────────────────────────────────────────────
 
-function renderMenuResumeCard(): void {
-  const saved = loadGame();
-  if (saved && !saved.completed) {
-    el.resumeCard.classList.remove('hidden');
-    const typeLabel = saved.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
-    const diffLabel = difficultyLabel(saved.difficulty);
-    el.resumeCard.querySelector('.resume-info h4')!.textContent = `${typeLabel} · ${diffLabel}`;
-    el.resumeCard.querySelector('.resume-info p')!.textContent = '진행 중인 게임을 이어서 하기';
-    el.resumeCard.querySelector('.resume-time')!.textContent = formatTime(getElapsed(saved));
-  } else {
-    el.resumeCard.classList.add('hidden');
-  }
+function animateRemove(target: HTMLElement, callback: () => void): void {
+  target.style.height = target.offsetHeight + 'px';
+  target.style.overflow = 'hidden';
+  requestAnimationFrame(() => {
+    target.style.transition = 'opacity 0.18s, height 0.26s 0.08s, margin 0.26s 0.08s, padding 0.26s 0.08s';
+    target.style.opacity = '0';
+    target.style.height = '0';
+    target.style.marginTop = '0';
+    target.style.marginBottom = '0';
+    target.style.paddingTop = '0';
+    target.style.paddingBottom = '0';
+    setTimeout(callback, 320);
+  });
+}
+
+function renderMenuSavedGames(): void {
+  const games = loadSavedGames().filter(g => !g.completed);
+  el.resumeSection.classList.toggle('hidden', games.length === 0);
+  el.resumeList.innerHTML = '';
+
+  games.forEach(game => {
+    const typeLabel = game.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
+    const icon = game.type === 'classic' ? '🔢' : '🗡️';
+    const diffLabel = difficultyLabel(game.difficulty);
+    const d = new Date(game.startTime);
+    const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+    const card = document.createElement('div');
+    card.className = 'resume-card';
+    card.innerHTML = `
+      <div class="resume-icon">${icon}</div>
+      <div class="resume-info">
+        <h4>${typeLabel} · ${diffLabel}</h4>
+        <p>${dateStr}</p>
+      </div>
+      <div class="resume-time">${formatTime(getElapsed(game))}</div>
+      <button class="resume-delete-btn" aria-label="삭제">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>`;
+
+    card.addEventListener('click', () => resumeGame(game));
+
+    card.querySelector('.resume-delete-btn')!.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ok = await showConfirm('이어하기 삭제', '이 게임을 삭제할까요? 저장된 진행 상황이 사라집니다.');
+      if (!ok) return;
+      animateRemove(card, () => {
+        removeSavedGame(game.id);
+        card.remove();
+        if (el.resumeList.children.length === 0) {
+          el.resumeSection.classList.add('hidden');
+        }
+      });
+    });
+
+    el.resumeList.appendChild(card);
+  });
 }
 
 function selectType(type: GameType): void {
@@ -467,9 +515,7 @@ async function startNewGame(): Promise<void> {
   }
 }
 
-function resumeGame(): void {
-  const saved = loadGame();
-  if (!saved || saved.completed) return;
+function resumeGame(saved: GameState): void {
   state.game = saved;
   undoStack.length = 0;
   redoStack.length = 0;
@@ -496,7 +542,7 @@ function showLoading(show: boolean): void {
 function beginTimer(): void {
   const game = state.game;
   if (!game) return;
-  // Reset startTime to now (elapsed already stored)
+  game.paused = false;
   game.startTime = Date.now();
   startTimer(game, (elapsed) => {
     const t = formatTime(elapsed);
@@ -1601,7 +1647,7 @@ function bindPressButton(button: HTMLElement, handler: () => void): void {
 
 function showCompletion(game: GameState): void {
   stopTimer();
-  saveGame(null); // clear saved game
+  removeSavedGame(game.id);
 
   const typeLabel = game.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
   const diffLabel = difficultyLabel(game.difficulty);
@@ -1823,6 +1869,8 @@ function renderHistory(): void {
     return;
   }
 
+  const savedIds = new Set(loadSavedGames().map(g => g.id));
+
   history.forEach(record => {
     const typeLabel = record.type === 'classic' ? '스도쿠' : '킬러 스도쿠';
     const diffLabel = difficultyLabel(record.difficulty);
@@ -1830,9 +1878,10 @@ function renderHistory(): void {
     const hintText = record.completed ? ` · 힌트 ${record.hintCount ?? 0}` : '';
     const date = new Date(record.date);
     const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+    const resumable = !record.completed && savedIds.has(record.id);
 
     const item = document.createElement('div');
-    item.className = 'history-item';
+    item.className = resumable ? 'history-item resumable' : 'history-item';
     item.innerHTML = `
       <div class="history-icon">${icon}</div>
       <div class="history-info">
@@ -1842,7 +1891,31 @@ function renderHistory(): void {
       <div class="history-meta">
         <div class="history-time">${formatTime(record.elapsed)}</div>
         <div class="history-date">${dateStr}</div>
-      </div>`;
+      </div>
+      ${resumable ? '<button class="history-resume-btn">이어하기</button>' : ''}
+      <button class="history-delete-btn" aria-label="삭제">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>`;
+
+    if (resumable) {
+      item.querySelector('.history-resume-btn')!.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const saved = loadSavedGames().find(g => g.id === record.id);
+        if (saved) resumeGame(saved);
+      });
+    }
+
+    item.querySelector('.history-delete-btn')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      animateRemove(item, () => {
+        removeHistoryRecord(record.id);
+        item.remove();
+        if (list.children.length === 0) renderHistory();
+      });
+    });
+
     list.appendChild(item);
   });
 }
@@ -1924,6 +1997,7 @@ export function init(): void {
   document.getElementById('back-from-game')?.addEventListener('click', () => {
     stopTimer();
     if (state.game && !state.game.completed) {
+      state.game = { ...state.game, elapsed: getElapsed(state.game), paused: true };
       autoSave(state.game);
       recordAbandonedGame(state.game);
     }
@@ -1938,7 +2012,6 @@ export function init(): void {
     btn.addEventListener('click', () => selectDiff(btn.dataset.diff as Difficulty));
   });
   el.startBtn.addEventListener('click', startNewGame);
-  el.resumeCard.addEventListener('click', resumeGame);
 
   // Numpad
   el.numBtns.forEach(btn => {
@@ -2131,6 +2204,7 @@ export function init(): void {
     if (state.screen === 'game') {
       stopTimer();
       if (state.game && !state.game.completed) {
+        state.game = { ...state.game, elapsed: getElapsed(state.game), paused: true };
         autoSave(state.game);
         recordAbandonedGame(state.game);
       }
@@ -2145,7 +2219,7 @@ export function init(): void {
   // Initial state
   selectType('classic');
   selectDiff('easy');
-  renderMenuResumeCard();
+  renderMenuSavedGames();
 
   // Show initial screen
   screens.game.classList.add('hidden');

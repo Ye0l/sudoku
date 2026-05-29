@@ -45,16 +45,6 @@
           <p>스도쿠 & 킬러 스도쿠</p>
         </div>
 
-        <!-- Resume card -->
-        <div id="resume-card" class="resume-card hidden">
-          <div class="resume-icon">▶️</div>
-          <div class="resume-info">
-            <h4>진행 중인 게임</h4>
-            <p>이어서 하기</p>
-          </div>
-          <div class="resume-time">--:--</div>
-        </div>
-
         <!-- Game type -->
         <div>
           <div class="section-label">게임 종류</div>
@@ -131,6 +121,12 @@
 
         <!-- Start button -->
         <button class="start-btn" id="start-btn">새 게임 시작</button>
+
+        <!-- Saved games (이어하기) -->
+        <div id="resume-section" class="hidden">
+          <div class="section-label">이어하기</div>
+          <div id="resume-list" class="resume-list"></div>
+        </div>
 
         <!-- Spacer for safe area -->
         <div style="height: 8px; flex-shrink: 0;"></div>
