@@ -4,7 +4,7 @@ import type { AccentTheme, AppState, CageColorMode, GameState, GameType, Difficu
 import {
   loadSavedGames, saveGame, removeSavedGame, loadHistory, loadSettings, saveSettings,
   clearHistory, removeHistoryRecord, takeCachedPuzzle, addCachedPuzzle, countCachedPuzzles, upsertHistory,
-  loadOrCreateUserId,
+  loadOrCreateUserId, pushSync, pullSync, mergeAndApplySync,
 } from './storage.ts';
 import {
   createGame, setCellValue, eraseCellValue, autoSave,
@@ -126,9 +126,11 @@ const el = {
 
   // History
   historyList:   document.getElementById('history-list')!,
-  userIdDisplay: document.getElementById('user-id-display')!,
-  copyUserIdBtn: document.getElementById('copy-user-id')!,
-  toast:         document.getElementById('toast')!,
+  userIdDisplay:  document.getElementById('user-id-display')!,
+  copyUserIdBtn:  document.getElementById('copy-user-id')!,
+  syncBtn:        document.getElementById('sync-btn') as HTMLButtonElement,
+  syncStatusText: document.getElementById('sync-status-text')!,
+  toast:          document.getElementById('toast')!,
 
   // Settings
   toggleErrors:    document.getElementById('toggle-errors') as HTMLInputElement,
@@ -1994,6 +1996,41 @@ export function init(): void {
       showToast('ID가 클립보드에 복사됐어요');
     });
   });
+
+  const syncedAtKey = 'sudoku_last_synced_at';
+  function updateSyncStatus(): void {
+    const ts = localStorage.getItem(syncedAtKey);
+    el.syncStatusText.textContent = ts
+      ? `마지막 동기화: ${new Date(Number(ts)).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      : '마지막 동기화: 없음';
+  }
+  updateSyncStatus();
+
+  el.syncBtn.addEventListener('click', async () => {
+    el.syncBtn.disabled = true;
+    el.syncBtn.classList.add('syncing');
+    try {
+      const remote = await pullSync(userId);
+      if (remote) mergeAndApplySync(remote);
+      await pushSync(userId);
+      localStorage.setItem(syncedAtKey, String(Date.now()));
+      updateSyncStatus();
+      state.history = loadHistory();
+      state.settings = loadSettings();
+      applyTheme(state.settings.theme);
+      applyAccentTheme(state.settings.accentTheme);
+      applyNumpadLayout(state.settings.numpadLayout);
+      applyGridLineSettings();
+      syncSettingsUI();
+      showToast('동기화 완료');
+    } catch {
+      showToast('동기화 실패. 네트워크를 확인해주세요');
+    } finally {
+      el.syncBtn.disabled = false;
+      el.syncBtn.classList.remove('syncing');
+    }
+  });
+
   syncViewportHeight();
 
   // Apply theme

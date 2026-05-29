@@ -451,8 +451,8 @@
           </div>
         </div>
 
-        <!-- About -->
-        <div class="section-label" style="margin-top:12px;">정보</div>
+        <!-- Sync -->
+        <div class="section-label" style="margin-top:12px;">동기화</div>
         <div class="settings-item settings-item-stacked">
           <div class="settings-icon">🔑</div>
           <div class="settings-label">
@@ -467,6 +467,25 @@
             </svg>
           </button>
         </div>
+        <div class="settings-item">
+          <div class="settings-icon">☁️</div>
+          <div class="settings-label">
+            <h4>클라우드 동기화</h4>
+            <p id="sync-status-text">마지막 동기화: 없음</p>
+          </div>
+          <button id="sync-btn" class="sync-btn">
+            <svg id="sync-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2v6h-6"/>
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+              <path d="M3 22v-6h6"/>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+            동기화
+          </button>
+        </div>
+
+        <!-- About -->
+        <div class="section-label" style="margin-top:12px;">정보</div>
       </div>
     </div>
 

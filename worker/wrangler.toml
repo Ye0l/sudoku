@@ -1,0 +1,8 @@
+name = "sudoku-sync"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "SUDOKU_KV"
+id = "38807de91a844488a6241a824bdce887"
+preview_id = "e192905ba547452297f9dc47f704dadf"
