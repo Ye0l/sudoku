@@ -124,6 +124,7 @@ export function clearSyncMeta(): void {
 
 const gameWs = new Map<string, WebSocket>();
 const wantedGames = new Set<string>();
+const sendTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function connectGameWS(
   userId: string,
@@ -180,9 +181,16 @@ export function sendCellUpdate(
   value: number | null,
   memos: number[] = [],
 ): void {
-  const ws = gameWs.get(gameId);
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: 'cell', puzzleId, row, col, value, memos }));
+  const key = `${gameId}:${row}:${col}`;
+  const existing = sendTimers.get(key);
+  if (existing) clearTimeout(existing);
+
+  sendTimers.set(key, setTimeout(() => {
+    sendTimers.delete(key);
+    const ws = gameWs.get(gameId);
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'cell', puzzleId, row, col, value, memos }));
+  }, 200));
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────

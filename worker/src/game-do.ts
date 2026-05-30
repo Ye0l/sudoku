@@ -42,7 +42,7 @@ export class SudokuGameDO {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(_ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> { // eslint-disable-line @typescript-eslint/no-unused-vars
     if (typeof message !== 'string') return;
     let msg: { type: string; puzzleId: string; row: number; col: number; value: number | null; memos: number[] };
     try {
@@ -72,6 +72,7 @@ export class SudokuGameDO {
       seq: this.seq,
     });
     for (const client of this.state.getWebSockets()) {
+      if (client === ws) continue; // don't echo back to sender
       try {
         client.send(broadcast);
       } catch {
