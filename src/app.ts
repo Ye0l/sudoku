@@ -1702,14 +1702,25 @@ function showCompletion(game: GameState): void {
 
 function openGameWS(game: GameState): void {
   connectGameWS(userId, game.id, {
-    onInit: (msg: InitMsg) => applyRemoteInit(msg.cells),
+    onInit: (msg: InitMsg) => applyRemoteInit(msg.cells, msg.seq),
     onCell: (msg: CellUpdateMsg) => applyRemoteCellUpdate(msg.row, msg.col, msg.value),
   });
 }
 
-function applyRemoteInit(cells: Record<string, number | null>): void {
+function applyRemoteInit(cells: Record<string, number | null>, seq: number): void {
   const game = state.game;
   if (!game) return;
+
+  if (seq === 0) {
+    // DO has no stored state yet — push local cells to DO instead of overwriting
+    for (let i = 0; i < 81; i++) {
+      const cell = game.cells[i];
+      if (!cell.given && cell.value !== 0) {
+        sendCellUpdate(game.id, game.id, Math.floor(i / 9), i % 9, cell.value);
+      }
+    }
+    return;
+  }
 
   const newCells = game.cells.map((cell, idx) => {
     if (cell.given) return cell;
