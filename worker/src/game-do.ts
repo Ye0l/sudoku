@@ -1,13 +1,18 @@
 // Durable Object — game state live sync via WebSocket Hibernation API
 
+interface CellEntry {
+  value: number | null;
+  memos: number[];
+}
+
 interface DoState {
-  cells: Record<string, number | null>; // key: "row:col"
+  cells: Record<string, CellEntry>; // key: "row:col"
   seq: number;
 }
 
 export class SudokuGameDO {
   private seq = 0;
-  private cells: Record<string, number | null> = {};
+  private cells: Record<string, CellEntry> = {};
   private loaded = false;
 
   constructor(private readonly state: DurableObjectState) {}
@@ -39,7 +44,7 @@ export class SudokuGameDO {
 
   async webSocketMessage(_ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') return;
-    let msg: { type: string; puzzleId: string; row: number; col: number; value: number | null };
+    let msg: { type: string; puzzleId: string; row: number; col: number; value: number | null; memos: number[] };
     try {
       msg = JSON.parse(message) as typeof msg;
     } catch {
@@ -51,8 +56,9 @@ export class SudokuGameDO {
 
     this.seq++;
     const key = `${msg.row}:${msg.col}`;
-    if (msg.value === null) delete this.cells[key];
-    else this.cells[key] = msg.value;
+    const memos = msg.memos ?? [];
+    if (msg.value === null && memos.length === 0) delete this.cells[key];
+    else this.cells[key] = { value: msg.value, memos };
 
     void this.state.storage.put('state', { cells: this.cells, seq: this.seq });
 
@@ -62,6 +68,7 @@ export class SudokuGameDO {
       row: msg.row,
       col: msg.col,
       value: msg.value,
+      memos,
       seq: this.seq,
     });
     for (const client of this.state.getWebSockets()) {

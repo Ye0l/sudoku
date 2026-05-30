@@ -45,12 +45,13 @@ export interface CellUpdateMsg {
   row: number;
   col: number;
   value: number | null;
+  memos: number[];
   seq: number;
 }
 
 export interface InitMsg {
   type: 'init';
-  cells: Record<string, number | null>; // key: "row:col"
+  cells: Record<string, { value: number | null; memos: number[] }>; // key: "row:col"
   seq: number;
 }
 
@@ -177,10 +178,11 @@ export function sendCellUpdate(
   row: number,
   col: number,
   value: number | null,
+  memos: number[] = [],
 ): void {
   const ws = gameWs.get(gameId);
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: 'cell', puzzleId, row, col, value }));
+  ws.send(JSON.stringify({ type: 'cell', puzzleId, row, col, value, memos }));
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────

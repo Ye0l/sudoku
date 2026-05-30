@@ -1535,10 +1535,11 @@ function onNumInput(num: number): void {
   updateKillerStats(newGame);
   scheduleSave(newGame);
 
-  if (!game.memoMode) {
+  {
     const idx = game.selectedCell;
-    const finalVal = newGame.cells[idx].value;
-    sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9, finalVal === 0 ? null : finalVal);
+    const finalCell = newGame.cells[idx];
+    sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9,
+      finalCell.value === 0 ? null : finalCell.value, finalCell.memos);
   }
 
   if (newGame.completed) {
@@ -1562,9 +1563,9 @@ function onErase(): void {
   updateKillerStats(newGame);
   scheduleSave(newGame);
 
-  if (cell.value !== 0) {
+  if (cell.value !== 0 || cell.memos.length > 0) {
     const idx = game.selectedCell;
-    sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9, null);
+    sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9, null, []);
   }
 }
 
@@ -1703,11 +1704,11 @@ function showCompletion(game: GameState): void {
 function openGameWS(game: GameState): void {
   connectGameWS(userId, game.id, {
     onInit: (msg: InitMsg) => applyRemoteInit(msg.cells, msg.seq),
-    onCell: (msg: CellUpdateMsg) => applyRemoteCellUpdate(msg.row, msg.col, msg.value),
+    onCell: (msg: CellUpdateMsg) => applyRemoteCellUpdate(msg.row, msg.col, msg.value, msg.memos),
   });
 }
 
-function applyRemoteInit(cells: Record<string, number | null>, seq: number): void {
+function applyRemoteInit(cells: Record<string, { value: number | null; memos: number[] }>, seq: number): void {
   const game = state.game;
   if (!game) return;
 
@@ -1715,8 +1716,9 @@ function applyRemoteInit(cells: Record<string, number | null>, seq: number): voi
     // DO has no stored state yet — push local cells to DO instead of overwriting
     for (let i = 0; i < 81; i++) {
       const cell = game.cells[i];
-      if (!cell.given && cell.value !== 0) {
-        sendCellUpdate(game.id, game.id, Math.floor(i / 9), i % 9, cell.value);
+      if (!cell.given && (cell.value !== 0 || cell.memos.length > 0)) {
+        sendCellUpdate(game.id, game.id, Math.floor(i / 9), i % 9,
+          cell.value === 0 ? null : cell.value, cell.memos);
       }
     }
     return;
@@ -1726,8 +1728,10 @@ function applyRemoteInit(cells: Record<string, number | null>, seq: number): voi
     if (cell.given) return cell;
     const row = Math.floor(idx / 9);
     const col = idx % 9;
-    const value = cells[`${row}:${col}`] ?? 0;
-    return { ...cell, value, memos: [], error: false };
+    const entry = cells[`${row}:${col}`];
+    const value = entry?.value ?? 0;
+    const memos = entry?.memos ?? [];
+    return { ...cell, value, memos, error: false };
   });
 
   const updated = validateAndCheck({ ...game, cells: newCells });
@@ -1743,7 +1747,7 @@ function applyRemoteInit(cells: Record<string, number | null>, seq: number): voi
   if (updated.completed && !game.completed) showCompletion(updated);
 }
 
-function applyRemoteCellUpdate(row: number, col: number, value: number | null): void {
+function applyRemoteCellUpdate(row: number, col: number, value: number | null, memos: number[]): void {
   const game = state.game;
   if (!game) return;
 
@@ -1751,11 +1755,19 @@ function applyRemoteCellUpdate(row: number, col: number, value: number | null): 
   const cell = game.cells[idx];
   if (!cell || cell.given) return;
 
-  const newCells = game.cells.map((c, i) =>
-    i === idx ? { ...c, value: value ?? 0, memos: [], error: false } : c,
-  );
+  let updated: GameState;
+  if (value !== null && value !== 0) {
+    // value 설정 — setCellValue로 peer 메모 제거까지 처리
+    updated = setCellValue({ ...game, memoMode: false }, idx, value, true);
+  } else if (memos.length > 0) {
+    const newCells = game.cells.map((c, i) =>
+      i === idx ? { ...c, value: 0, memos, error: false } : c,
+    );
+    updated = validateAndCheck({ ...game, cells: newCells });
+  } else {
+    updated = eraseCellValue(game, idx);
+  }
 
-  const updated = validateAndCheck({ ...game, cells: newCells });
   state.game = updated;
   autoSave(updated);
 
