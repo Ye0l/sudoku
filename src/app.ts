@@ -7,13 +7,14 @@ import {
   loadOrCreateUserId,
 } from './storage.ts';
 import {
-  syncAll, syncOnClear, acquireSession, forceAcquireSession, releaseSession,
+  syncAll, syncOnClear,
   markSettingsChanged, markPuzzleChanged, markPuzzleDeleted, clearSyncMeta,
-  startAutoSync, setupPageLifecycle, lastSyncAt, hasSyncUrl,
-  SessionConflictError,
+  setupPageLifecycle, lastSyncAt, hasSyncUrl,
+  connectGameWS, disconnectGameWS, sendCellUpdate,
+  type InitMsg, type CellUpdateMsg,
 } from './sync.ts';
 import {
-  createGame, setCellValue, eraseCellValue, autoSave,
+  createGame, setCellValue, eraseCellValue, autoSave, validateAndCheck,
   startTimer, stopTimer, formatTime, getElapsed,
 } from './game.ts';
 import { getBoxIndex } from './engine/sudoku.ts';
@@ -501,6 +502,7 @@ function generatePuzzle(type: GameType, diff: Difficulty): Promise<GameState> {
 async function startNewGame(): Promise<void> {
   // If there is an unfinished game, record it as abandoned before replacing it
   if (state.game && !state.game.completed) {
+    disconnectGameWS(state.game.id);
     recordAbandonedGame(state.game);
   }
 
@@ -527,6 +529,7 @@ async function startNewGame(): Promise<void> {
     renderBoard(game);
     showLoading(false);
     beginTimer();
+    openGameWS(game);
   } catch (err) {
     showLoading(false);
     console.error('Puzzle generation failed:', err);
@@ -535,6 +538,7 @@ async function startNewGame(): Promise<void> {
 }
 
 function resumeGame(saved: GameState): void {
+  if (state.game && state.game.id !== saved.id) disconnectGameWS(state.game.id);
   state.game = saved;
   undoStack.length = 0;
   redoStack.length = 0;
@@ -544,6 +548,7 @@ function resumeGame(saved: GameState): void {
     renderBoard(saved);
     beginTimer();
   });
+  openGameWS(saved);
 }
 
 function updateGameHeader(game: GameState): void {
@@ -1530,6 +1535,12 @@ function onNumInput(num: number): void {
   updateKillerStats(newGame);
   scheduleSave(newGame);
 
+  if (!game.memoMode) {
+    const idx = game.selectedCell;
+    const finalVal = newGame.cells[idx].value;
+    sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9, finalVal === 0 ? null : finalVal);
+  }
+
   if (newGame.completed) {
     showCompletion(newGame);
   }
@@ -1550,6 +1561,11 @@ function onErase(): void {
   updateNumpadCounts(newGame);
   updateKillerStats(newGame);
   scheduleSave(newGame);
+
+  if (cell.value !== 0) {
+    const idx = game.selectedCell;
+    sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9, null);
+  }
 }
 
 function onUndo(): void {
@@ -1598,6 +1614,9 @@ function onHint(): void {
   updateHintCount(state.game);
   updateKillerStats(state.game);
   scheduleSave(state.game);
+
+  const idx = game.selectedCell;
+  sendCellUpdate(game.id, game.id, Math.floor(idx / 9), idx % 9, correct);
 
   if (state.game.completed) showCompletion(state.game);
 }
@@ -1666,6 +1685,7 @@ function bindPressButton(button: HTMLElement, handler: () => void): void {
 
 function showCompletion(game: GameState): void {
   stopTimer();
+  disconnectGameWS(game.id);
   removeSavedGame(game.id);
   markPuzzleDeleted(game.id);
   void syncOnClear(userId, game.id);
@@ -1676,6 +1696,65 @@ function showCompletion(game: GameState): void {
   el.completeTime.textContent = formatTime(game.elapsed);
   el.completeOverlay.classList.add('visible');
   haptic('success');
+}
+
+// ── WebSocket game sync ───────────────────────────────────────────────────────
+
+function openGameWS(game: GameState): void {
+  connectGameWS(userId, game.id, {
+    onInit: (msg: InitMsg) => applyRemoteInit(msg.cells),
+    onCell: (msg: CellUpdateMsg) => applyRemoteCellUpdate(msg.row, msg.col, msg.value),
+  });
+}
+
+function applyRemoteInit(cells: Record<string, number | null>): void {
+  const game = state.game;
+  if (!game) return;
+
+  const newCells = game.cells.map((cell, idx) => {
+    if (cell.given) return cell;
+    const row = Math.floor(idx / 9);
+    const col = idx % 9;
+    const value = cells[`${row}:${col}`] ?? 0;
+    return { ...cell, value, memos: [], error: false };
+  });
+
+  const updated = validateAndCheck({ ...game, cells: newCells });
+  state.game = updated;
+  autoSave(updated);
+
+  if (state.screen === 'game') {
+    renderAllCells(updated);
+    updateNumpadCounts(updated);
+    updateKillerStats(updated);
+  }
+
+  if (updated.completed && !game.completed) showCompletion(updated);
+}
+
+function applyRemoteCellUpdate(row: number, col: number, value: number | null): void {
+  const game = state.game;
+  if (!game) return;
+
+  const idx = row * 9 + col;
+  const cell = game.cells[idx];
+  if (!cell || cell.given) return;
+
+  const newCells = game.cells.map((c, i) =>
+    i === idx ? { ...c, value: value ?? 0, memos: [], error: false } : c,
+  );
+
+  const updated = validateAndCheck({ ...game, cells: newCells });
+  state.game = updated;
+  autoSave(updated);
+
+  if (state.screen === 'game') {
+    renderAllCells(updated);
+    updateNumpadCounts(updated);
+    updateKillerStats(updated);
+  }
+
+  if (updated.completed && !game.completed) showCompletion(updated);
 }
 
 function scheduleSave(game: GameState): void {
@@ -2079,29 +2158,15 @@ export function init(): void {
     el.syncBtn.disabled = true;
     el.syncBtn.classList.add('syncing');
 
-    async function runSync(): Promise<void> {
+    try {
       const result = await syncAll(userId);
-      await releaseSession(userId);
       applySyncedState();
       if (result.overwritten.length > 0) {
         showToast(`동기화 완료 (${result.overwritten.length}개 원격으로 업데이트됨)`);
       } else {
         showToast('동기화 완료');
       }
-    }
-
-    try {
-      try {
-        await acquireSession(userId);
-      } catch (e) {
-        if (!(e instanceof SessionConflictError)) throw e;
-        const ok = await showConfirm('동기화 충돌', '다른 기기에서 동기화 중입니다. 강제로 이어받을까요?');
-        if (!ok) return;
-        await forceAcquireSession(userId);
-      }
-      await runSync();
     } catch {
-      await releaseSession(userId);
       showToast('동기화 실패. 네트워크를 확인해주세요');
     } finally {
       el.syncBtn.disabled = false;
@@ -2109,16 +2174,7 @@ export function init(): void {
     }
   });
 
-  // Auto-sync every 3 minutes
-  startAutoSync(
-    userId,
-    (result) => {
-      applySyncedState();
-      if (result.overwritten.length > 0) showToast(`${result.overwritten.length}개 원격으로 업데이트됨`);
-    },
-    () => { /* silently ignore auto-sync errors */ },
-  );
-  setupPageLifecycle(userId);
+  setupPageLifecycle(userId, () => { applySyncedState(); });
 
   syncViewportHeight();
 

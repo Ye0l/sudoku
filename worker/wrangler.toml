@@ -1,8 +1,16 @@
 name = "sudoku-sync"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
+account_id = ""  # Cloudflare 대시보드 우측 하단 Account ID 입력
 
 [[kv_namespaces]]
 binding = "SUDOKU_KV"
 id = "38807de91a844488a6241a824bdce887"
 preview_id = "e192905ba547452297f9dc47f704dadf"
+
+[durable_objects]
+bindings = [{ name = "GAME_DO", class_name = "SudokuGameDO" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SudokuGameDO"]

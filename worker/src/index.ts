@@ -1,14 +1,17 @@
+import { SudokuGameDO } from './game-do.ts';
+export { SudokuGameDO };
+
 export interface Env {
   SUDOKU_KV: KVNamespace;
+  GAME_DO: DurableObjectNamespace;
 }
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Session-Token, X-Force',
+  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const SESSION_TTL = 60;
 const UID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(body: unknown, status = 200): Response {
@@ -26,11 +29,15 @@ export default {
     const p = url.pathname;
     let m: RegExpMatchArray | null;
 
-    if ((m = p.match(/^\/session\/([^/]+)$/)))
-      return UID_RE.test(m[1]) ? handleSession(request, env, m[1]) : json({ error: 'Invalid ID' }, 400);
-
-    if ((m = p.match(/^\/session\/([^/]+)\/heartbeat$/)))
-      return UID_RE.test(m[1]) ? handleHeartbeat(request, env, m[1]) : json({ error: 'Invalid ID' }, 400);
+    // WebSocket: game state live sync via Durable Object
+    if ((m = p.match(/^\/user\/([^/]+)\/game\/([^/]+)\/ws$/))) {
+      const [, uid, gid] = m;
+      if (!UID_RE.test(uid) || !UID_RE.test(gid)) return json({ error: 'Invalid ID' }, 400);
+      if (request.headers.get('Upgrade') !== 'websocket') return json({ error: 'WebSocket required' }, 426);
+      const id = env.GAME_DO.idFromName(`${uid}:${gid}`);
+      const stub = env.GAME_DO.get(id);
+      return stub.fetch(request);
+    }
 
     if ((m = p.match(/^\/user\/([^/]+)\/settings$/)))
       return UID_RE.test(m[1]) ? handleSettings(request, env, m[1]) : json({ error: 'Invalid ID' }, 400);
@@ -55,50 +62,6 @@ export default {
     return json({ error: 'Not Found' }, 404);
   },
 };
-
-// ── Session ───────────────────────────────────────────────────────────────────
-
-async function handleSession(request: Request, env: Env, uid: string): Promise<Response> {
-  const key = `session:${uid}`;
-
-  if (request.method === 'POST') {
-    const force = request.headers.get('X-Force') === '1';
-    const existing = await env.SUDOKU_KV.get(key);
-    if (existing && !force) {
-      const s = JSON.parse(existing) as { acquiredAt: number };
-      return json({ conflict: true, acquiredAt: s.acquiredAt }, 409);
-    }
-    const token = crypto.randomUUID();
-    await env.SUDOKU_KV.put(key, JSON.stringify({ token, acquiredAt: Date.now() }), {
-      expirationTtl: SESSION_TTL,
-    });
-    return json({ ok: true, token });
-  }
-
-  if (request.method === 'DELETE') {
-    const token = request.headers.get('X-Session-Token');
-    const existing = await env.SUDOKU_KV.get(key);
-    if (existing) {
-      const s = JSON.parse(existing) as { token: string };
-      if (s.token === token) await env.SUDOKU_KV.delete(key);
-    }
-    return json({ ok: true });
-  }
-
-  return json({ error: 'Method Not Allowed' }, 405);
-}
-
-async function handleHeartbeat(request: Request, env: Env, uid: string): Promise<Response> {
-  if (request.method !== 'PUT') return json({ error: 'Method Not Allowed' }, 405);
-  const key = `session:${uid}`;
-  const token = request.headers.get('X-Session-Token');
-  const existing = await env.SUDOKU_KV.get(key);
-  if (!existing) return json({ error: 'Session expired' }, 404);
-  const s = JSON.parse(existing) as { token: string };
-  if (s.token !== token) return json({ error: 'Invalid token' }, 403);
-  await env.SUDOKU_KV.put(key, existing, { expirationTtl: SESSION_TTL });
-  return json({ ok: true });
-}
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +107,6 @@ async function handlePuzzle(request: Request, env: Env, uid: string, pid: string
     if (body.deletedAt !== undefined) record.deletedAt = body.deletedAt;
     await env.SUDOKU_KV.put(key, JSON.stringify(record));
 
-    // Update puzzle index
     const indexRaw = await env.SUDOKU_KV.get(indexKey);
     const index = (indexRaw ? JSON.parse(indexRaw) : {}) as Record<string, { updatedAt: number; deletedAt?: number }>;
     index[pid] = { updatedAt: now };

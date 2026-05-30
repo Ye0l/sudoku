@@ -1,11 +1,9 @@
-// Cloud sync engine — Cloudflare KV backend
+// Cloud sync engine — Durable Object (game state) + Cloudflare KV (settings, clears)
 
 import type { AppSettings, GameState, GameType, Difficulty, HistoryRecord } from './types.ts';
 import { loadSavedGames, loadHistory, loadSettings, saveSettings } from './storage.ts';
 
 const SYNC_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_SYNC_URL ?? '';
-const HEARTBEAT_INTERVAL = 30_000;
-const AUTO_SYNC_INTERVAL = 3 * 60_000;
 
 // ── Remote types ──────────────────────────────────────────────────────────────
 
@@ -38,6 +36,28 @@ interface RemoteClears {
 }
 
 type PuzzleIndex = Record<string, { updatedAt: number; deletedAt?: number }>;
+
+// ── WebSocket message types ───────────────────────────────────────────────────
+
+export interface CellUpdateMsg {
+  type: 'cell';
+  puzzleId: string;
+  row: number;
+  col: number;
+  value: number | null;
+  seq: number;
+}
+
+export interface InitMsg {
+  type: 'init';
+  cells: Record<string, number | null>; // key: "row:col"
+  seq: number;
+}
+
+export type WsCallbacks = {
+  onInit: (msg: InitMsg) => void;
+  onCell: (msg: CellUpdateMsg) => void;
+};
 
 // ── Sync metadata (local) ─────────────────────────────────────────────────────
 
@@ -99,70 +119,71 @@ export function clearSyncMeta(): void {
   localStorage.removeItem(META_KEY);
 }
 
-// ── Session management ────────────────────────────────────────────────────────
+// ── WebSocket game connections ─────────────────────────────────────────────────
 
-let sessionToken: string | null = null;
-let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+const gameWs = new Map<string, WebSocket>();
+const wantedGames = new Set<string>();
 
-export class SessionConflictError extends Error {
-  constructor(public readonly acquiredAt: number) {
-    super('Another device has an active session');
-    this.name = 'SessionConflictError';
-  }
-}
+export function connectGameWS(
+  userId: string,
+  gameId: string,
+  callbacks: WsCallbacks,
+): void {
+  if (!SYNC_URL) return;
+  disconnectGameWS(gameId);
+  wantedGames.add(gameId);
 
-export async function acquireSession(userId: string): Promise<void> {
-  const res = await fetch(`${SYNC_URL}/session/${userId}`, { method: 'POST' });
-  const data = await res.json() as { ok: true; token: string } | { conflict: true; acquiredAt: number };
-  if ('conflict' in data) throw new SessionConflictError(data.acquiredAt);
-  sessionToken = data.token;
-  startHeartbeat(userId);
-}
+  const base = SYNC_URL.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+  const ws = new WebSocket(`${base}/user/${userId}/game/${gameId}/ws`);
+  gameWs.set(gameId, ws);
 
-export async function forceAcquireSession(userId: string): Promise<void> {
-  const res = await fetch(`${SYNC_URL}/session/${userId}`, {
-    method: 'POST',
-    headers: { 'X-Force': '1' },
+  let lastSeq = 0;
+
+  ws.addEventListener('message', (e) => {
+    let msg: CellUpdateMsg | InitMsg;
+    try { msg = JSON.parse(e.data as string) as CellUpdateMsg | InitMsg; } catch { return; }
+    if (msg.type === 'init') {
+      lastSeq = (msg as InitMsg).seq;
+      callbacks.onInit(msg as InitMsg);
+    } else if (msg.type === 'cell') {
+      const cm = msg as CellUpdateMsg;
+      if (cm.seq <= lastSeq) return; // out-of-order protection
+      lastSeq = cm.seq;
+      callbacks.onCell(cm);
+    }
   });
-  const data = await res.json() as { ok: true; token: string };
-  sessionToken = data.token;
-  startHeartbeat(userId);
+
+  ws.addEventListener('close', () => {
+    if (gameWs.get(gameId) === ws) {
+      gameWs.delete(gameId);
+      if (wantedGames.has(gameId)) {
+        setTimeout(() => {
+          if (wantedGames.has(gameId)) connectGameWS(userId, gameId, callbacks);
+        }, 3_000);
+      }
+    }
+  });
 }
 
-export async function releaseSession(userId: string): Promise<void> {
-  stopHeartbeat();
-  if (!sessionToken) return;
-  const token = sessionToken;
-  sessionToken = null;
-  await fetch(`${SYNC_URL}/session/${userId}`, {
-    method: 'DELETE',
-    headers: { 'X-Session-Token': token },
-  }).catch(() => {});
+export function disconnectGameWS(gameId: string): void {
+  wantedGames.delete(gameId);
+  const ws = gameWs.get(gameId);
+  if (ws) { ws.close(); gameWs.delete(gameId); }
 }
 
-function startHeartbeat(userId: string): void {
-  stopHeartbeat();
-  heartbeatTimer = setInterval(async () => {
-    if (!sessionToken) { stopHeartbeat(); return; }
-    const res = await fetch(`${SYNC_URL}/session/${userId}/heartbeat`, {
-      method: 'PUT',
-      headers: { 'X-Session-Token': sessionToken },
-    }).catch(() => null);
-    if (!res?.ok) { sessionToken = null; stopHeartbeat(); }
-  }, HEARTBEAT_INTERVAL);
-}
-
-function stopHeartbeat(): void {
-  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+export function sendCellUpdate(
+  gameId: string,
+  puzzleId: string,
+  row: number,
+  col: number,
+  value: number | null,
+): void {
+  const ws = gameWs.get(gameId);
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'cell', puzzleId, row, col, value }));
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (sessionToken) h['X-Session-Token'] = sessionToken;
-  return h;
-}
 
 async function apiGet<T>(path: string): Promise<T | null> {
   const res = await fetch(`${SYNC_URL}${path}`);
@@ -173,7 +194,7 @@ async function apiGet<T>(path: string): Promise<T | null> {
 async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${SYNC_URL}${path}`, {
     method: 'PUT',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`PUT ${path}: ${res.status}`);
@@ -192,7 +213,7 @@ function fromLog(c: ClearLog): HistoryRecord {
 
 // ── Sync phases ───────────────────────────────────────────────────────────────
 
-// New device — just pull everything down, no merge logic
+// New device — pull everything, no merge logic
 async function fullPull(userId: string, meta: SyncMeta): Promise<void> {
   const [remoteSettings, puzzleIndex, remoteClears] = await Promise.all([
     apiGet<RemoteSettings>(`/user/${userId}/settings`),
@@ -232,22 +253,18 @@ async function syncSettings(userId: string, meta: SyncMeta): Promise<void> {
   const knownServerAt = meta.settings?.serverUpdatedAt ?? 0;
 
   if (!remote || localUpdatedAt > knownServerAt) {
-    // Local is newer or no remote — push
     const r = await apiPut<RemoteSettings>(`/user/${userId}/settings`, { data: localSettings });
     meta.settings = { localUpdatedAt: r.updatedAt, serverUpdatedAt: r.updatedAt };
   } else if (remote.updatedAt > knownServerAt) {
-    // Remote is newer — pull
     saveSettings(remote.data);
     meta.settings = { localUpdatedAt: remote.updatedAt, serverUpdatedAt: remote.updatedAt };
   }
-  // Equal — no action
 }
 
 // Puzzles — Last-Write-Wins per puzzle, Tombstone for deletes
 async function syncPuzzles(userId: string, meta: SyncMeta): Promise<string[]> {
   const overwritten: string[] = [];
 
-  // Push pending tombstones first
   for (const [pid, del] of Object.entries(meta.deletedPuzzles)) {
     if (!del.pushed) {
       await apiPut(`/user/${userId}/puzzle/${pid}`, { deletedAt: del.deletedAt });
@@ -265,7 +282,6 @@ async function syncPuzzles(userId: string, meta: SyncMeta): Promise<string[]> {
     const localMeta = meta.puzzles[pid];
 
     if (entry.deletedAt) {
-      // Remote deleted this puzzle
       if (local) overwritten.push(pid);
       unsynced.delete(pid);
       delete meta.puzzles[pid];
@@ -273,7 +289,6 @@ async function syncPuzzles(userId: string, meta: SyncMeta): Promise<string[]> {
     }
 
     if (!local) {
-      // New from remote — pull
       const r = await apiGet<RemotePuzzle>(`/user/${userId}/puzzle/${pid}`);
       if (r && !r.deletedAt) {
         result.push(r.data);
@@ -285,7 +300,6 @@ async function syncPuzzles(userId: string, meta: SyncMeta): Promise<string[]> {
       const knownAt = localMeta?.serverUpdatedAt ?? 0;
 
       if (entry.updatedAt > localAt) {
-        // Remote is newer — pull (flag if local had unsaved changes)
         const r = await apiGet<RemotePuzzle>(`/user/${userId}/puzzle/${pid}`);
         if (r && !r.deletedAt) {
           if (localAt > knownAt) overwritten.push(pid);
@@ -293,10 +307,8 @@ async function syncPuzzles(userId: string, meta: SyncMeta): Promise<string[]> {
           meta.puzzles[pid] = { localUpdatedAt: r.updatedAt, serverUpdatedAt: r.updatedAt };
         }
       } else {
-        // Local is newer or same
         result.push(local);
         if (localAt > knownAt) {
-          // Local changed since last sync — push
           const r = await apiPut<RemotePuzzle>(`/user/${userId}/puzzle/${pid}`, { data: local });
           meta.puzzles[pid] = { localUpdatedAt: r.updatedAt, serverUpdatedAt: r.updatedAt };
         }
@@ -304,7 +316,6 @@ async function syncPuzzles(userId: string, meta: SyncMeta): Promise<string[]> {
     }
   }
 
-  // Local-only puzzles — push to remote
   for (const [pid, game] of unsynced) {
     result.push(game);
     const r = await apiPut<RemotePuzzle>(`/user/${userId}/puzzle/${pid}`, { data: game });
@@ -335,7 +346,6 @@ export interface SyncResult {
   overwritten: string[];
 }
 
-// Full sync (caller must hold session)
 export async function syncAll(userId: string): Promise<SyncResult> {
   if (!SYNC_URL) throw new Error('VITE_SYNC_URL not configured');
 
@@ -357,14 +367,12 @@ export async function syncAll(userId: string): Promise<SyncResult> {
   return { overwritten };
 }
 
-// Quick sync after puzzle clear (acquire own session, best-effort)
+// Quick sync after puzzle clear (best-effort, no session needed)
 export async function syncOnClear(userId: string, puzzleId: string): Promise<void> {
   if (!SYNC_URL) return;
   try {
-    await acquireSession(userId);
     const meta = loadMeta();
     await syncClears(userId, meta);
-    // Push tombstone for the cleared (removed) puzzle if pending
     const del = meta.deletedPuzzles[puzzleId];
     if (del && !del.pushed) {
       await apiPut(`/user/${userId}/puzzle/${puzzleId}`, { deletedAt: del.deletedAt });
@@ -373,51 +381,25 @@ export async function syncOnClear(userId: string, puzzleId: string): Promise<voi
     meta.lastSyncAt = Date.now();
     saveMeta(meta);
   } catch (e) {
-    if (!(e instanceof SessionConflictError)) console.warn('syncOnClear failed', e);
-  } finally {
-    await releaseSession(userId);
+    console.warn('syncOnClear failed', e);
   }
-}
-
-// ── Auto-sync ─────────────────────────────────────────────────────────────────
-
-let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
-
-export function startAutoSync(
-  userId: string,
-  onSync: (result: SyncResult) => void,
-  onError: (err: Error) => void,
-): void {
-  if (!SYNC_URL) return;
-  stopAutoSync();
-  autoSyncTimer = setInterval(async () => {
-    try {
-      await acquireSession(userId);
-      try {
-        const result = await syncAll(userId);
-        onSync(result);
-      } finally {
-        await releaseSession(userId);
-      }
-    } catch (e) {
-      if (!(e instanceof SessionConflictError)) onError(e as Error);
-      // Another device is active — silently skip this tick
-    }
-  }, AUTO_SYNC_INTERVAL);
-}
-
-export function stopAutoSync(): void {
-  if (autoSyncTimer) { clearInterval(autoSyncTimer); autoSyncTimer = null; }
 }
 
 // ── Page lifecycle ────────────────────────────────────────────────────────────
 
-export function setupPageLifecycle(userId: string): void {
-  const release = (): void => { void releaseSession(userId); };
+export function setupPageLifecycle(userId: string, onSyncDone?: () => void): void {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') release();
+    if (document.visibilityState !== 'visible' || !SYNC_URL) return;
+    void (async () => {
+      try {
+        const meta = loadMeta();
+        await syncSettings(userId, meta);
+        await syncClears(userId, meta);
+        saveMeta(meta);
+        onSyncDone?.();
+      } catch { /* ignore */ }
+    })();
   });
-  window.addEventListener('pagehide', release);
 }
 
 // ── Util ──────────────────────────────────────────────────────────────────────
