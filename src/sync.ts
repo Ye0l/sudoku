@@ -126,13 +126,21 @@ const gameWs = new Map<string, WebSocket>();
 const wantedGames = new Set<string>();
 const sendTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Local-authoritative cell state — locally modified cells whose changes
+// may or may not have reached the DO yet. Cleared when another client's
+// update for that cell arrives (DO becomes authoritative again).
+export interface LocalOverride { value: number | null; memos: number[] }
+const localOverrides = new Map<string, LocalOverride>(); // key: gameId:row:col
+
 export function connectGameWS(
   userId: string,
   gameId: string,
   callbacks: WsCallbacks,
 ): void {
   if (!SYNC_URL) return;
-  disconnectGameWS(gameId);
+  // Closing the previous WS for this game must NOT clear localOverrides
+  // (we want to preserve them across reconnects).
+  closeWsOnly(gameId);
   wantedGames.add(gameId);
 
   const base = SYNC_URL.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
@@ -140,6 +148,11 @@ export function connectGameWS(
   gameWs.set(gameId, ws);
 
   let lastSeq = 0;
+
+  ws.addEventListener('open', () => {
+    // Reconnect: flush any locally-modified cells that may not have reached the DO
+    flushLocalOverrides(gameId);
+  });
 
   ws.addEventListener('message', (e) => {
     let msg: CellUpdateMsg | InitMsg;
@@ -151,6 +164,8 @@ export function connectGameWS(
       const cm = msg as CellUpdateMsg;
       if (cm.seq <= lastSeq) return; // out-of-order protection
       lastSeq = cm.seq;
+      // Another client's update for this cell — DO is authoritative now
+      localOverrides.delete(`${gameId}:${cm.row}:${cm.col}`);
       callbacks.onCell(cm);
     }
   });
@@ -167,10 +182,51 @@ export function connectGameWS(
   });
 }
 
-export function disconnectGameWS(gameId: string): void {
-  wantedGames.delete(gameId);
+function closeWsOnly(gameId: string): void {
   const ws = gameWs.get(gameId);
   if (ws) { ws.close(); gameWs.delete(gameId); }
+}
+
+export function disconnectGameWS(gameId: string): void {
+  wantedGames.delete(gameId);
+  closeWsOnly(gameId);
+}
+
+export function clearLocalOverrides(gameId: string): void {
+  const prefix = `${gameId}:`;
+  for (const key of [...localOverrides.keys()]) {
+    if (key.startsWith(prefix)) localOverrides.delete(key);
+  }
+  for (const key of [...sendTimers.keys()]) {
+    if (key.startsWith(prefix)) {
+      clearTimeout(sendTimers.get(key)!);
+      sendTimers.delete(key);
+    }
+  }
+}
+
+export function getLocalOverridesForGame(gameId: string): Map<string, LocalOverride> {
+  const result = new Map<string, LocalOverride>();
+  const prefix = `${gameId}:`;
+  for (const [key, val] of localOverrides) {
+    if (key.startsWith(prefix)) result.set(key, val);
+  }
+  return result;
+}
+
+function flushLocalOverrides(gameId: string): void {
+  const ws = gameWs.get(gameId);
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const prefix = `${gameId}:`;
+  for (const [key, override] of localOverrides) {
+    if (!key.startsWith(prefix)) continue;
+    const [, rowStr, colStr] = key.split(':');
+    ws.send(JSON.stringify({
+      type: 'cell', puzzleId: gameId,
+      row: parseInt(rowStr, 10), col: parseInt(colStr, 10),
+      value: override.value, memos: override.memos,
+    }));
+  }
 }
 
 export function sendCellUpdate(
@@ -182,13 +238,16 @@ export function sendCellUpdate(
   memos: number[] = [],
 ): void {
   const key = `${gameId}:${row}:${col}`;
+  // Always record local-authoritative state — survives offline periods
+  localOverrides.set(key, { value, memos });
+
   const existing = sendTimers.get(key);
   if (existing) clearTimeout(existing);
 
   sendTimers.set(key, setTimeout(() => {
     sendTimers.delete(key);
     const ws = gameWs.get(gameId);
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return; // keep override for next reconnect
     ws.send(JSON.stringify({ type: 'cell', puzzleId, row, col, value, memos }));
   }, 200));
 }

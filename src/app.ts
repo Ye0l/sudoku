@@ -11,6 +11,7 @@ import {
   markSettingsChanged, markPuzzleChanged, markPuzzleDeleted, clearSyncMeta,
   setupPageLifecycle, lastSyncAt, hasSyncUrl,
   connectGameWS, disconnectGameWS, sendCellUpdate,
+  clearLocalOverrides, getLocalOverridesForGame,
   type InitMsg, type CellUpdateMsg,
 } from './sync.ts';
 import {
@@ -503,6 +504,7 @@ async function startNewGame(): Promise<void> {
   // If there is an unfinished game, record it as abandoned before replacing it
   if (state.game && !state.game.completed) {
     disconnectGameWS(state.game.id);
+    clearLocalOverrides(state.game.id);
     recordAbandonedGame(state.game);
   }
 
@@ -538,7 +540,10 @@ async function startNewGame(): Promise<void> {
 }
 
 function resumeGame(saved: GameState): void {
-  if (state.game && state.game.id !== saved.id) disconnectGameWS(state.game.id);
+  if (state.game && state.game.id !== saved.id) {
+    disconnectGameWS(state.game.id);
+    clearLocalOverrides(state.game.id);
+  }
   state.game = saved;
   undoStack.length = 0;
   redoStack.length = 0;
@@ -1687,6 +1692,7 @@ function bindPressButton(button: HTMLElement, handler: () => void): void {
 function showCompletion(game: GameState): void {
   stopTimer();
   disconnectGameWS(game.id);
+  clearLocalOverrides(game.id);
   removeSavedGame(game.id);
   markPuzzleDeleted(game.id);
   void syncOnClear(userId, game.id);
@@ -1724,10 +1730,17 @@ function applyRemoteInit(cells: Record<string, { value: number | null; memos: nu
     return;
   }
 
+  // Cells modified locally (possibly during offline) — preserve their values over DO state
+  const overrides = getLocalOverridesForGame(game.id);
+
   const newCells = game.cells.map((cell, idx) => {
     if (cell.given) return cell;
     const row = Math.floor(idx / 9);
     const col = idx % 9;
+    const override = overrides.get(`${game.id}:${row}:${col}`);
+    if (override) {
+      return { ...cell, value: override.value ?? 0, memos: override.memos, error: false };
+    }
     const entry = cells[`${row}:${col}`];
     const value = entry?.value ?? 0;
     const memos = entry?.memos ?? [];
