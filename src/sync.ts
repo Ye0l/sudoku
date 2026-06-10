@@ -457,17 +457,20 @@ export async function syncOnClear(userId: string, puzzleId: string): Promise<voi
 // ── Page lifecycle ────────────────────────────────────────────────────────────
 
 export function setupPageLifecycle(userId: string, onSyncDone?: () => void): void {
+  async function runSync(): Promise<void> {
+    if (!SYNC_URL) return;
+    const meta = loadMeta();
+    await syncSettings(userId, meta);
+    await syncClears(userId, meta);
+    saveMeta(meta);
+    onSyncDone?.();
+  }
+
+  void runSync().catch(() => {});
+
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !SYNC_URL) return;
-    void (async () => {
-      try {
-        const meta = loadMeta();
-        await syncSettings(userId, meta);
-        await syncClears(userId, meta);
-        saveMeta(meta);
-        onSyncDone?.();
-      } catch { /* ignore */ }
-    })();
+    if (document.visibilityState !== 'visible') return;
+    void runSync().catch(() => {});
   });
 }
 
