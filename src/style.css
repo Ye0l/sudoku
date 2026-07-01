@@ -341,7 +341,7 @@ body {
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 16px;
+  padding: 16px 16px 40px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1418,7 +1418,7 @@ body {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 12px;
+  padding: 12px 12px 36px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1565,7 +1565,7 @@ body {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 16px;
+  padding: 16px 16px 40px;
   display: flex;
   flex-direction: column;
   gap: 8px;

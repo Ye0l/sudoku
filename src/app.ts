@@ -1219,6 +1219,23 @@ function drawKillerSumGuides(
     if (sr < 8) ctx.fillRect(cellStart(sc), cellStart(sr + 1), cellTrack, cellStart(0) + cellSpan(9) - cellStart(sr + 1));
     ctx.fillRect(cellStart(sc), cellStart(sr), cellTrack, cellTrack);
     ctx.restore();
+
+    // Highlight every other cell holding the same number as the selection.
+    const selValue = game.cells[game.selectedCell].value;
+    if (selValue !== 0) {
+      const selBox = getBoxIndex(game.selectedCell);
+      const sameValFill = isDark ? 'rgba(129,140,248,0.42)' : 'rgba(99,102,241,0.30)';
+      ctx.save();
+      ctx.fillStyle = sameValFill;
+      for (let idx = 0; idx < 81; idx++) {
+        if (idx === game.selectedCell || game.cells[idx].value !== selValue) continue;
+        const row = (idx / 9) | 0;
+        const col = idx % 9;
+        if (row === sr || col === sc || getBoxIndex(idx) === selBox) continue;
+        ctx.fillRect(cellStart(col), cellStart(row), cellTrack, cellTrack);
+      }
+      ctx.restore();
+    }
   }
 
   // Draw memos in a compact centered block so killer cage labels stay clear.
@@ -2410,9 +2427,10 @@ export function init(): void {
   window.visualViewport?.addEventListener('resize', onResize);
   window.visualViewport?.addEventListener('scroll', onResize);
 
-  // Prevent default scroll/zoom behaviors
+  // Prevent default scroll/zoom behaviors, except inside the app's own
+  // scrollable lists (menu, history, settings) which need native touch scroll.
   document.addEventListener('touchmove', (e) => {
-    if (state.screen === 'settings') return;
+    if (e.target instanceof Element && e.target.closest('.menu-scroll, .history-list, .settings-list')) return;
     if (e.target instanceof HTMLInputElement && e.target.type === 'range') return;
     e.preventDefault();
   }, { passive: false });
